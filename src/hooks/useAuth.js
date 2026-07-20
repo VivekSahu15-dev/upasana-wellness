@@ -1,0 +1,87 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import axios from 'axios';
+
+const AuthContext = createContext(null);
+
+export const setupAxiosInterceptors = (token) => {
+  if (token) {
+    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+  } else {
+    delete axios.defaults.headers.common['Authorization'];
+  }
+};
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Check for saved token on mount
+    const savedToken = localStorage.getItem('upasanaToken');
+    const savedUser = localStorage.getItem('upasanaUser');
+    
+    if (savedToken && savedUser) {
+      try {
+        const userData = JSON.parse(savedUser);
+        setToken(savedToken);
+        setUser(userData);
+        setIsAuthenticated(true);
+        setupAxiosInterceptors(savedToken);
+        console.log('Auth restored successfully');
+      } catch (error) {
+        console.error('Error parsing user data:', error);
+        localStorage.removeItem('upasanaToken');
+        localStorage.removeItem('upasanaUser');
+        localStorage.removeItem('upasanaUserID');
+      }
+    }
+    setLoading(false);
+  }, []);
+
+  const login = (newToken, userData) => {
+    setToken(newToken);
+    setUser(userData);
+    setIsAuthenticated(true);
+    localStorage.setItem('upasanaToken', newToken);
+    localStorage.setItem('upasanaUser', JSON.stringify(userData));
+    if (userData.id) {
+      localStorage.setItem('upasanaUserID', userData.id.toString());
+    }
+    setupAxiosInterceptors(newToken);
+  };
+
+  const logout = () => {
+    setToken(null);
+    setUser(null);
+    setIsAuthenticated(false);
+    localStorage.removeItem('upasanaToken');
+    localStorage.removeItem('upasanaUser');
+    localStorage.removeItem('upasanaUserID');
+    setupAxiosInterceptors(null);
+  };
+
+  const value = { 
+    user, 
+    token, 
+    isAuthenticated, 
+    loading,
+    login, 
+    logout 
+  };
+  
+  return React.createElement(
+    AuthContext.Provider,
+    { value },
+    children
+  );
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
