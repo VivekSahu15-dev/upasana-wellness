@@ -1,36 +1,49 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '../../hooks/useAuth';
-import { toast } from 'react-toastify';
 
 const ProtectedRoute = ({ children, adminOnly = false }) => {
-  const { isAuthenticated, user, loading } = useAuth();
   const [checking, setChecking] = useState(true);
+  const [isAuthorized, setIsAuthorized] = useState(false);
 
   useEffect(() => {
     // Check if user is authenticated from localStorage
     const token = localStorage.getItem('upasanaToken');
     const userData = localStorage.getItem('upasanaUser');
     
+    
     if (token && userData) {
       try {
         const parsedUser = JSON.parse(userData);
-        if (parsedUser.role === 'admin') {
-          setChecking(false);
+       
+        
+        if (adminOnly) {
+          // Case-insensitive role check
+          const userRole = parsedUser.role?.toLowerCase() || '';
+          const isAdmin = userRole === 'admin';
+          
+          if (isAdmin) {
+            console.log('ProtectedRoute - Admin authorized ✅');
+            setIsAuthorized(true);
+          } else {
+            console.log('ProtectedRoute - Not admin, unauthorized ❌');
+            setIsAuthorized(false);
+          }
         } else {
-          toast.error('Access denied. Admin only.');
-          setChecking(false);
+          // For non-admin routes, just check if user exists
+          setIsAuthorized(true);
         }
       } catch (error) {
         console.error('Error parsing user data:', error);
-        setChecking(false);
+        setIsAuthorized(false);
       }
     } else {
-      setChecking(false);
+      console.log('ProtectedRoute - No auth data ❌');
+      setIsAuthorized(false);
     }
-  }, []);
+    setChecking(false);
+  }, [adminOnly]);
 
-  if (loading || checking) {
+  if (checking) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#E7E1D5]">
         <div className="flex flex-col items-center gap-4">
@@ -41,27 +54,9 @@ const ProtectedRoute = ({ children, adminOnly = false }) => {
     );
   }
 
-  // Check if user is authenticated
-  const token = localStorage.getItem('upasanaToken');
-  const userData = localStorage.getItem('upasanaUser');
-  
-  if (!token || !userData) {
-    toast.error('Please login to continue');
+  if (!isAuthorized) {
+    console.log('ProtectedRoute - Redirecting to /admin');
     return <Navigate to="/admin" replace />;
-  }
-
-  // Check for admin
-  if (adminOnly) {
-    try {
-      const parsedUser = JSON.parse(userData);
-      if (parsedUser?.role !== 'admin') {
-        toast.error('Access denied. Admin only.');
-        return <Navigate to="/admin" replace />;
-      }
-    } catch (error) {
-      console.error('Error parsing user data:', error);
-      return <Navigate to="/admin" replace />;
-    }
   }
 
   return children;

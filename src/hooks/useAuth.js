@@ -18,7 +18,6 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for saved token on mount
     const savedToken = localStorage.getItem('upasanaToken');
     const savedUser = localStorage.getItem('upasanaUser');
     
@@ -34,25 +33,25 @@ export const AuthProvider = ({ children }) => {
         console.error('Error parsing user data:', error);
         localStorage.removeItem('upasanaToken');
         localStorage.removeItem('upasanaUser');
-        localStorage.removeItem('upasanaUserID');
       }
     }
     setLoading(false);
   }, []);
 
   const login = (newToken, userData) => {
+    console.log('Login called');
     setToken(newToken);
     setUser(userData);
     setIsAuthenticated(true);
     localStorage.setItem('upasanaToken', newToken);
     localStorage.setItem('upasanaUser', JSON.stringify(userData));
-    if (userData.id) {
-      localStorage.setItem('upasanaUserID', userData.id.toString());
-    }
+    localStorage.setItem('upasanaUserID', userData.id ? userData.id.toString() : '1');
     setupAxiosInterceptors(newToken);
+    console.log('Login successful, data saved');
   };
 
   const logout = () => {
+    console.log('Logout called');
     setToken(null);
     setUser(null);
     setIsAuthenticated(false);

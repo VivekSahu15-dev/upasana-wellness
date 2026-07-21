@@ -1,7 +1,8 @@
 import axios from 'axios';
 
 // Get base URL from environment
-const baseURL = import.meta.env.VITE_API_URL || '/api';
+const baseURL = import.meta.env.VITE_API_URL || 'https://upasanaapi.tstrainingnsolutions.com';
+const API_KEY = import.meta.env.VITE_API_KEY || '';
 
 // Create axios instance with base URL
 const axiosInstance = axios.create({
@@ -9,6 +10,7 @@ const axiosInstance = axios.create({
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
+    'APIKey': API_KEY
   },
 });
 
@@ -20,13 +22,8 @@ axiosInstance.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     
-    // Log request for debugging
-    console.log('Request:', {
-      url: config.url,
-      method: config.method,
-      headers: config.headers,
-      data: config.data
-    });
+    // Always add API key
+    config.headers['APIKey'] = API_KEY;
     
     return config;
   },
@@ -36,33 +33,32 @@ axiosInstance.interceptors.request.use(
   }
 );
 
-// Response interceptor to handle token expiration
+// Response interceptor
 axiosInstance.interceptors.response.use(
   (response) => {
-    console.log('Response:', {
-      status: response.status,
-      data: response.data
-    });
     return response;
   },
   (error) => {
-    console.error('Response error:', {
-      status: error.response?.status,
-      data: error.response?.data,
-      message: error.message
-    });
-    
-    if (error.response?.status === 401 || error.response?.status === 403) {
-      // Token expired or invalid
-      localStorage.removeItem('upasanaToken');
-      localStorage.removeItem('upasanaUser');
-      localStorage.removeItem('upasanaUserID');
-      
-      // Redirect to login if not already there
-      if (!window.location.pathname.includes('/admin')) {
-        window.location.href = '/admin';
-      } else if (window.location.pathname !== '/admin') {
-        window.location.href = '/admin';
+    // Handle 401 - Unauthorized
+    if (error.response?.status === 401) {
+      const errorData = error.response?.data;
+      if (typeof errorData === 'string' && (
+        errorData.includes('Api Key was not provided') || 
+        errorData.includes('Invalid API Key') ||
+        errorData.includes('API Key')
+      )) {
+        // API Key error - don't redirect
+      } else {
+        // Token expired or invalid
+        localStorage.removeItem('upasanaToken');
+        localStorage.removeItem('upasanaUser');
+        localStorage.removeItem('upasanaUserID');
+        
+        if (!window.location.pathname.includes('/admin')) {
+          window.location.href = '/admin';
+        } else if (window.location.pathname !== '/admin') {
+          window.location.href = '/admin';
+        }
       }
     }
     return Promise.reject(error);

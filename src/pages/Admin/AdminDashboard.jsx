@@ -15,7 +15,7 @@ import {
 import Patients from './Patients';
 import Therapies from './Therapies';
 import PaymentModes from './PaymentModes';
-// import Packages from './Packages';
+import Packages from './Packages';
 import { toast } from 'react-toastify';
 
 const AdminDashboard = () => {
@@ -30,12 +30,10 @@ const AdminDashboard = () => {
     const token = localStorage.getItem('upasanaToken');
     const userData = localStorage.getItem('upasanaUser');
     
-    console.log('AdminDashboard - Token:', token ? 'Present' : 'Not present');
-    console.log('AdminDashboard - UserData:', userData ? 'Present' : 'Not present');
     
     if (!token || !userData) {
       console.log('No auth data, redirecting to admin login');
-      navigate('/admin');
+      navigate('/admin', { replace: true });
       return;
     }
     
@@ -43,13 +41,13 @@ const AdminDashboard = () => {
       const parsedUser = JSON.parse(userData);
       if (parsedUser.role !== 'admin') {
         console.log('Not admin user, redirecting');
-        navigate('/admin');
+        navigate('/admin', { replace: true });
         return;
       }
       setUser(parsedUser);
     } catch (error) {
       console.error('Error parsing user data:', error);
-      navigate('/admin');
+      navigate('/admin', { replace: true });
       return;
     }
     
@@ -59,8 +57,9 @@ const AdminDashboard = () => {
   const handleLogout = () => {
     localStorage.removeItem('upasanaToken');
     localStorage.removeItem('upasanaUser');
+    localStorage.removeItem('upasanaUserID');
     toast.success('Logged out successfully');
-    navigate('/admin');
+    navigate('/admin', { replace: true });
   };
 
   const menuItems = [
@@ -68,7 +67,7 @@ const AdminDashboard = () => {
     { path: '/admin/dashboard/patients', icon: <FaUsers />, label: 'Patients' },
     { path: '/admin/dashboard/therapies', icon: <FaClipboardList />, label: 'Therapies' },
     { path: '/admin/dashboard/payments', icon: <FaCreditCard />, label: 'Payment Modes' },
-    // { path: '/admin/dashboard/packages', icon: <FaBox />, label: 'Packages' },
+    { path: '/admin/dashboard/packages', icon: <FaBox />, label: 'Packages' },
   ];
 
   const isActive = (path) => {
@@ -178,8 +177,8 @@ const AdminDashboard = () => {
             <Route path="patients" element={<Patients />} />
             <Route path="therapies" element={<Therapies />} />
             <Route path="payments" element={<PaymentModes />} />
-            {/* <Route path="packages" element={<Packages />} /> */}
-            <Route path="*" element={<Navigate to="/admin/dashboard" />} />
+            <Route path="packages" element={<Packages />} />
+            <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
           </Routes>
         </div>
       </div>
@@ -197,7 +196,7 @@ const AdminDashboard = () => {
 
 // Admin Overview Component
 const AdminOverview = () => {
-  // Get counts from localStorage
+  // Get counts from localStorage (for demo)
   const getCount = (key) => {
     const data = localStorage.getItem(key);
     return data ? JSON.parse(data).length : 0;
@@ -249,7 +248,7 @@ const AdminOverview = () => {
         </div>
         <div className="bg-gradient-to-br from-[#AE261B]/5 to-[#E39D17]/5 rounded-2xl p-6 border border-gray-100">
           <h3 className="font-semibold text-gray-800 mb-2">System Status</h3>
-          <p className="text-sm text-gray-500">All data is stored locally.</p>
+          <p className="text-sm text-gray-500">All data is stored locally for demo.</p>
           <div className="mt-4 space-y-2">
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
@@ -261,7 +260,7 @@ const AdminOverview = () => {
             </div>
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
-              <span>Database connection: Ready</span>
+              <span>API connection: Ready</span>
             </div>
           </div>
         </div>

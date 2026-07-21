@@ -157,20 +157,26 @@ const Therapies = () => {
         ActiveStatus: isEditMode ? formData.ActiveStatus : null
       };
 
+      console.log('Saving therapy data:', therapyData);
+      console.log('User ID:', userId);
+
       const response = await axiosInstance.post(
         `/api/TherapyMasterAPI/Save/${userId}`,
         therapyData
       );
+      
+      console.log('Save response:', response.data);
       
       if (response.data && response.data.success) {
         toast.success(isEditMode ? 'Therapy updated successfully!' : 'Therapy added successfully!');
         closeModal();
         loadTherapies();
       } else {
-        toast.error(response.data.message || 'Operation failed');
+        toast.error(response.data?.message || 'Operation failed');
       }
     } catch (error) {
       console.error('Error saving therapy:', error);
+      console.error('Error response:', error.response?.data);
       toast.error(error.response?.data?.message || 'Operation failed. Please try again.');
     }
   };
@@ -362,9 +368,6 @@ const Therapies = () => {
                 <h3 className="text-xl font-bold text-gray-800">
                   {isEditMode ? 'Edit Therapy' : 'Add New Therapy'}
                 </h3>
-                <p className="text-sm text-gray-500">
-                  {isEditMode ? 'Update therapy details' : 'Create a new therapy'}
-                </p>
               </div>
               <button
                 onClick={closeModal}
@@ -383,7 +386,7 @@ const Therapies = () => {
                   value={formData.Name}
                   onChange={handleInputChange}
                   className={`w-full px-4 py-2.5 rounded-lg border-2 ${errors.Name ? 'border-[#AE261B]' : 'border-gray-200'} focus:border-[#57ABB2] focus:outline-none transition-colors`}
-                  placeholder="Enter therapy name"
+                  required
                 />
                 {errors.Name && <p className="mt-1 text-xs text-[#AE261B]">{errors.Name}</p>}
               </div>
@@ -411,6 +414,7 @@ const Therapies = () => {
                     onChange={handleInputChange}
                     className={`w-full pl-10 pr-4 py-2.5 rounded-lg border-2 ${errors.Price ? 'border-[#AE261B]' : 'border-gray-200'} focus:border-[#57ABB2] focus:outline-none transition-colors`}
                     placeholder="0.00"
+                    required
                     step="0.01"
                     min="0"
                   />

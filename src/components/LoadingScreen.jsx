@@ -1,11 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 
 const LoadingScreen = ({ onComplete }) => {
   const containerRef = useRef(null);
+  const [animationError, setAnimationError] = useState(false);
 
   useEffect(() => {
-    // Auto-dismiss after 4 seconds
     const timer = setTimeout(() => {
       if (containerRef.current) {
         containerRef.current.style.transform = 'translateY(-100%)';
@@ -28,7 +28,6 @@ const LoadingScreen = ({ onComplete }) => {
       }}
     >
       <div className="flex flex-col items-center space-y-12 max-w-4xl w-full px-4">
-        {/* Logo */}
         <div className="flex flex-col items-center space-y-3">
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight">
             <span className="text-[#57ABB2]">Upasana</span>
@@ -38,17 +37,30 @@ const LoadingScreen = ({ onComplete }) => {
           <p className="text-gray-500 text-sm tracking-wider uppercase">Your Path to Holistic Health</p>
         </div>
 
-        {/* Lottie Animation - Larger */}
+        {/* Lottie Animation with fallback */}
         <div className="w-96 h-96 md:w-[500px] md:h-[500px]">
-          <DotLottieReact
-            src="./animations/Loading.lottie"
-            loop
-            autoplay
-            className="w-full h-full"
-          />
+          {!animationError ? (
+            <DotLottieReact
+              src="animations/Loading.lottie"
+              loop
+              autoplay
+              className="w-full h-full"
+              onError={() => setAnimationError(true)}
+            />
+          ) : (
+            // Fallback animation - simple CSS animation if Lottie fails
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="relative w-48 h-48">
+                <div className="absolute inset-0 rounded-full border-8 border-[#57ABB2]/20"></div>
+                <div className="absolute inset-0 rounded-full border-8 border-[#57ABB2] border-t-transparent animate-spin"></div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-6xl">🧘</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Loading Text with Animation */}
         <div className="flex flex-col items-center space-y-4">
           <div className="flex items-center space-x-3">
             <div className="w-3 h-3 bg-[#57ABB2] rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>

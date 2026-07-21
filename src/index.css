@@ -1,9 +1,11 @@
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&display=swap');
+
 @import "tailwindcss";
 
 @layer base {
   body {
     @apply bg-[#E7E1D5];
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-family: "Google Sans", sans-serif;
   }
 }
 

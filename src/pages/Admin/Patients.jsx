@@ -44,15 +44,19 @@ const Patients = () => {
   const [errors, setErrors] = useState({});
   const isMounted = useRef(true);
 
+  // Get User ID from localStorage
   const getUserId = () => {
     const userId = localStorage.getItem('upasanaUserID');
+    console.log('Getting User ID from localStorage:', userId);
     return userId || '1';
   };
 
-  // Load Countries
+  // Load Countries with better error handling
   const loadCountries = useCallback(async () => {
     try {
       const userId = getUserId();
+      console.log('Loading countries with UserID:', userId);
+      
       const response = await axiosInstance.post(
         `/api/CountryMasterAPI/Search/${userId}`,
         {
@@ -63,11 +67,38 @@ const Patients = () => {
         }
       );
       
-      if (response.data && response.data.success) {
-        setCountries(response.data.data || []);
+      console.log('Country API Response:', response.data);
+      
+      // Check if response is valid JSON data
+      if (response.data && Array.isArray(response.data)) {
+        setCountries(response.data);
+        console.log('Countries loaded:', response.data.length);
+      } else if (response.data && response.data.success && Array.isArray(response.data.data)) {
+        setCountries(response.data.data);
+        console.log('Countries loaded from data property:', response.data.data.length);
+      } else {
+        console.warn('Unexpected country response format:', response.data);
+        // Set default countries as fallback
+        setCountries([
+          { ID: 1, Name: 'India' },
+          { ID: 2, Name: 'USA' },
+          { ID: 3, Name: 'UK' },
+          { ID: 4, Name: 'Canada' },
+          { ID: 5, Name: 'Australia' }
+        ]);
+        toast.info('Using default country list');
       }
     } catch (error) {
       console.error('Error loading countries:', error);
+      // Set default countries as fallback
+      setCountries([
+        { ID: 1, Name: 'India' },
+        { ID: 2, Name: 'USA' },
+        { ID: 3, Name: 'UK' },
+        { ID: 4, Name: 'Canada' },
+        { ID: 5, Name: 'Australia' }
+      ]);
+      toast.warning('Could not load countries, using default list');
     }
   }, []);
 
@@ -80,16 +111,35 @@ const Patients = () => {
     
     try {
       const userId = getUserId();
+      console.log('Loading states with UserID:', userId, 'CountryID:', countryId);
       const response = await axiosInstance.post(
         `/api/StateMasterAPI/Search/${userId}`,
         { CountryID: parseInt(countryId) }
       );
       
-      if (response.data && response.data.success) {
-        setStates(response.data.data || []);
+      console.log('State API Response:', response.data);
+      
+      if (response.data && Array.isArray(response.data)) {
+        setStates(response.data);
+      } else if (response.data && response.data.success && Array.isArray(response.data.data)) {
+        setStates(response.data.data);
+      } else {
+        // Set default states as fallback
+        const defaultStates = {
+          1: ['Maharashtra', 'Delhi', 'Karnataka', 'Tamil Nadu', 'Uttar Pradesh'],
+          2: ['California', 'Texas', 'New York', 'Florida', 'Illinois'],
+          3: ['London', 'Manchester', 'Birmingham', 'Liverpool', 'Leeds'],
+          4: ['Ontario', 'Quebec', 'British Columbia', 'Alberta', 'Manitoba'],
+          5: ['New South Wales', 'Victoria', 'Queensland', 'Western Australia', 'South Australia']
+        };
+        
+        const stateList = defaultStates[parseInt(countryId)] || ['State 1', 'State 2', 'State 3'];
+        setStates(stateList.map((name, index) => ({ ID: index + 1, Name: name })));
+        toast.info('Using default state list');
       }
     } catch (error) {
       console.error('Error loading states:', error);
+      setStates([]);
     }
   }, []);
 
@@ -99,6 +149,7 @@ const Patients = () => {
     setLoading(true);
     try {
       const userId = getUserId();
+      console.log('Loading patients with UserID:', userId);
       const response = await axiosInstance.post(
         `/api/PatientsMasterAPI/Search/${userId}`,
         {
@@ -114,9 +165,14 @@ const Patients = () => {
         }
       );
       
-      if (response.data && response.data.success) {
-        setPatients(response.data.data || []);
-        setFilteredPatients(response.data.data || []);
+      console.log('Patients API Response:', response.data);
+      
+      if (response.data && Array.isArray(response.data)) {
+        setPatients(response.data);
+        setFilteredPatients(response.data);
+      } else if (response.data && response.data.success && Array.isArray(response.data.data)) {
+        setPatients(response.data.data);
+        setFilteredPatients(response.data.data);
       } else {
         setPatients([]);
         setFilteredPatients([]);
@@ -139,6 +195,7 @@ const Patients = () => {
     };
   }, [loadPatients, loadCountries]);
 
+  // Debounced search
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (searchTerm) {
@@ -170,8 +227,10 @@ const Patients = () => {
         }
       );
       
-      if (response.data && response.data.success) {
-        setFilteredPatients(response.data.data || []);
+      if (response.data && Array.isArray(response.data)) {
+        setFilteredPatients(response.data);
+      } else if (response.data && response.data.success && Array.isArray(response.data.data)) {
+        setFilteredPatients(response.data.data);
       }
     } catch (error) {
       console.error('Error searching patients:', error);
@@ -252,7 +311,7 @@ const Patients = () => {
         patientData
       );
       
-      if (response.data && response.data.success) {
+      if (response.data && (response.data.success || response.data.ID)) {
         toast.success(isEditMode ? 'Patient updated successfully!' : 'Patient created successfully!');
         closeModal();
         loadPatients();
@@ -277,7 +336,7 @@ const Patients = () => {
           }
         );
         
-        if (response.data && response.data.success) {
+        if (response.data && (response.data.success || response.data.ID)) {
           toast.success(`Patient ${name} deleted successfully!`);
           loadPatients();
         }
@@ -300,7 +359,7 @@ const Patients = () => {
         }
       );
       
-      if (response.data && response.data.success) {
+      if (response.data && (response.data.success || response.data.ID)) {
         toast.success(`Patient ${newStatus.toLowerCase()}d successfully!`);
         loadPatients();
       }

@@ -17,15 +17,14 @@ import {
   FaSpa
 } from 'react-icons/fa';
 import { toast } from 'react-toastify';
-import { useAuth } from '../hooks/useAuth';
 import axiosInstance from '../utils/axiosConfig';
 
 const AdminLogin = () => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [animationError, setAnimationError] = useState(false);
   const navigate = useNavigate();
-  const { login } = useAuth();
 
   const loginSchema = yup.object().shape({
     username: yup.string().required('Username is required'),
@@ -44,8 +43,9 @@ const AdminLogin = () => {
   useEffect(() => {
     const token = localStorage.getItem('upasanaToken');
     const user = localStorage.getItem('upasanaUser');
-    if (token && user) {
-      navigate('/admin/dashboard');
+    const userId = localStorage.getItem('upasanaUserID');
+    if (token && user && userId) {
+      navigate('/admin/dashboard', { replace: true });
     }
   }, [navigate]);
 
@@ -54,33 +54,63 @@ const AdminLogin = () => {
     setError('');
     
     try {
-      console.log('Attempting login with:', { username: data.username });
       
-      // New login endpoint with _loginFrom parameter
-      const loginFrom = 'web'; // or any string value
+      const loginFrom = 'web';
       const response = await axiosInstance.post(`/api/UserMasterAPI/Login/${loginFrom}`, {
         username: data.username,
         password: data.password
       });
       
-      console.log('Login response:', response.data);
       
-      if (response.data && response.data.success) {
-        const { token, user } = response.data.data;
+      // Check if login was successful
+      const isSuccess = response.data?.loginStatus === 'ON' || response.data?.success === true;
+      
+      if (isSuccess) {
+        // Get the actual user ID from the response
+        const userId = response.data._dataBaseMaster?.ID || 
+                       response.data.userId || 
+                       response.data.id || 
+                       response.data.user?.ID || 
+                       response.data.user?.id || 
+                       null;
         
-        // Store user data
+        if (!userId) {
+          console.error('No User ID found in response:', response.data);
+          setError('User ID not found in response. Please contact support.');
+          toast.error('User ID not found');
+          setLoading(false);
+          return;
+        }
+        
+        
+        // Get role from response and normalize to lowercase
+        const rawRole = response.data.accountType || response.data.role || 'Admin';
+        const normalizedRole = rawRole.toLowerCase();
+        
+        // Get user data from response
         const userData = {
-          id: user.ID || user.id,
-          name: user.Name || user.name || 'Administrator',
-          username: user.Username || user.username || data.username,
-          role: user.Role || user.role || 'admin'
+          id: userId,
+          name: response.data.userName || response.data.name || data.username,
+          username: response.data.userName || data.username,
+          role: normalizedRole,
+          email: response.data._dataBaseMaster?.Email || '',
+          contact: response.data._dataBaseMaster?.Contact || ''
         };
         
-        login(token, userData);
-        toast.success('Welcome Admin! Login successful.');
-        navigate('/admin/dashboard');
+        // Generate a token
+        const token = response.data.token || btoa(JSON.stringify(userData));
+        
+        // Save to localStorage directly
+        localStorage.setItem('upasanaToken', token);
+        localStorage.setItem('upasanaUser', JSON.stringify(userData));
+        localStorage.setItem('upasanaUserID', userId.toString());
+        
+        
+        
+        toast.success(`Welcome ${userData.name}! Login successful.`);
+        navigate('/admin/dashboard', { replace: true });
       } else {
-        const errorMsg = response.data?.message || 'Invalid credentials. Please try again.';
+        const errorMsg = response.data?.message || response.data?.loginStatus || 'Invalid credentials. Please try again.';
         setError(errorMsg);
         toast.error(errorMsg);
       }
@@ -89,10 +119,18 @@ const AdminLogin = () => {
       
       let errorMsg = 'Something went wrong. Please try again.';
       
-      if (err.code === 'ERR_NETWORK') {
+      if (err.response) {
+        try {
+          if (typeof err.response.data === 'object') {
+            errorMsg = err.response.data.message || err.response.data.error || 'Server error';
+          } else if (typeof err.response.data === 'string') {
+            errorMsg = err.response.data;
+          }
+        } catch (e) {
+          errorMsg = 'Server error occurred';
+        }
+      } else if (err.code === 'ERR_NETWORK') {
         errorMsg = 'Network error. Please check your connection and try again.';
-      } else if (err.response) {
-        errorMsg = err.response.data?.message || err.response.data?.error || `Server error: ${err.response.status}`;
       } else if (err.request) {
         errorMsg = 'No response from server. Please check if the server is running.';
       }
@@ -112,7 +150,6 @@ const AdminLogin = () => {
     <div className="min-h-screen flex items-center justify-center bg-[#E7E1D5] p-4">
       <div className="w-full max-w-6xl bg-white/90 backdrop-blur-sm rounded-3xl shadow-2xl overflow-hidden border border-white/20">
         <div className="flex flex-col lg:flex-row">
-          {/* Left Column - Animation */}
           <div className="w-full lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-[#57ABB2]/5 via-[#E7E1D5]/30 to-[#DE9A0E]/5 p-8 lg:p-12 flex items-center justify-center min-h-[400px] lg:min-h-[600px]">
             <div className="absolute inset-0 opacity-20">
               <div className="absolute top-0 right-0 w-96 h-96 bg-[#57ABB2] rounded-full filter blur-3xl"></div>
@@ -122,12 +159,19 @@ const AdminLogin = () => {
             
             <div className="relative z-10 flex flex-col items-center space-y-8 w-full">
               <div className="w-full max-w-md h-[300px] lg:h-[400px]">
-                <DotLottieReact
-                  src="https://lottie.host/8f5a4d3e-7b8a-4f4a-9a8b-8f3b5e8d7f1a/5kMxXfPq8R.lottie"
-                  loop
-                  autoplay
-                  className="w-full h-full"
-                />
+                {!animationError ? (
+                  <DotLottieReact
+                    src="/animations/Signup.lottie"
+                    loop
+                    autoplay
+                    className="w-full h-full"
+                    onError={() => setAnimationError(true)}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <span className="text-8xl block mb-4">🌿</span>
+                  </div>
+                )}
               </div>
               
               <div className="text-center space-y-3">
@@ -156,7 +200,6 @@ const AdminLogin = () => {
             </div>
           </div>
 
-          {/* Right Column - Form */}
           <div className="w-full lg:w-1/2 p-8 lg:p-12 flex items-center">
             <div className="w-full max-w-md mx-auto">
               <div className="text-center mb-8">
@@ -179,10 +222,12 @@ const AdminLogin = () => {
                 </div>
               )}
 
-              {/* Demo Credentials Info */}
               <div className="mb-4 p-3 bg-blue-50 border-l-4 border-blue-500 rounded-lg">
                 <p className="text-xs text-blue-600">
-                  <strong>Demo:</strong> Username: admin | Password: admin123
+                  <strong>Login:</strong> Enter your credentials
+                </p>
+                <p className="text-xs text-blue-400 mt-1">
+                  <strong>API Key:</strong> {import.meta.env.VITE_API_KEY ? 'Configured ✅' : 'Missing ❌'}
                 </p>
               </div>
 

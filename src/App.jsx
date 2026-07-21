@@ -10,12 +10,10 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if this is first visit
     const hasVisited = sessionStorage.getItem('hasVisitedUpasana');
     if (hasVisited) {
       setIsLoading(false);
     } else {
-      // Show loading for first visit
       setTimeout(() => {
         setIsLoading(false);
         sessionStorage.setItem('hasVisitedUpasana', 'true');
@@ -23,10 +21,12 @@ function App() {
     }
   }, []);
 
+  // Show loading screen outside of Router
   if (isLoading) {
     return <LoadingScreen onComplete={() => {}} />;
   }
 
+  // Wrap everything else in Router
   return (
     <AuthProvider>
       <Router>
