@@ -9,7 +9,8 @@ import {
   FaRupeeSign,
   FaToggleOn,
   FaToggleOff,
-  FaSpinner
+  FaSpinner,
+  FaExclamationTriangle
 } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import axiosInstance from '../../utils/axiosConfig';
@@ -31,19 +32,28 @@ const Therapies = () => {
     ActiveStatus: null
   });
   const [errors, setErrors] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const isMounted = useRef(true);
 
   const getUserId = () => {
     const userId = localStorage.getItem('upasanaUserID');
-    return userId || '1';
+    // console.log('Getting UserID from localStorage:', userId);
+    if (!userId) {
+      window.location.href = '/admin';
+      return null;
+    }
+    return userId;
   };
 
   const loadTherapies = useCallback(async () => {
     if (!isMounted.current) return;
     
+    const userId = getUserId();
+    if (!userId) return;
+    
     setLoading(true);
     try {
-      const userId = getUserId();
+      // console.log('Loading therapies with UserID:', userId);
       const response = await axiosInstance.post(
         `/api/TherapyMasterAPI/Search/${userId}`,
         {
@@ -55,13 +65,30 @@ const Therapies = () => {
         }
       );
       
-      if (response.data && response.data.success) {
-        setTherapies(response.data.data || []);
-        setFilteredTherapies(response.data.data || []);
-      } else {
-        setTherapies([]);
-        setFilteredTherapies([]);
+      // console.log('Load therapies response:', response.data);
+      
+      let data = [];
+      if (response.data) {
+        if (Array.isArray(response.data)) {
+          data = response.data;
+        } else if (response.data.data && Array.isArray(response.data.data)) {
+          data = response.data.data;
+        } else if (response.data.result && Array.isArray(response.data.result)) {
+          data = response.data.result;
+        }
       }
+      
+      data = data.map(item => ({
+        ID: item.ID || item.id || null,
+        Name: item.Name || item.name || 'Unnamed',
+        Description: item.Description || item.description || '',
+        Price: item.Price || item.price || 0,
+        ActiveStatus: item.ActiveStatus || item.activeStatus || item.status || 'Inactive'
+      }));
+      
+      // console.log('Parsed therapies data:', data);
+      setTherapies(data);
+      setFilteredTherapies(data);
     } catch (error) {
       console.error('Error loading therapies:', error);
       toast.error('Failed to load therapies');
@@ -92,9 +119,11 @@ const Therapies = () => {
   }, [searchTerm, therapies]);
 
   const handleSearch = useCallback(async (term) => {
+    const userId = getUserId();
+    if (!userId) return;
+    
     setSearchLoading(true);
     try {
-      const userId = getUserId();
       const response = await axiosInstance.post(
         `/api/TherapyMasterAPI/Search/${userId}`,
         {
@@ -106,9 +135,24 @@ const Therapies = () => {
         }
       );
       
-      if (response.data && response.data.success) {
-        setFilteredTherapies(response.data.data || []);
+      let data = [];
+      if (response.data) {
+        if (Array.isArray(response.data)) {
+          data = response.data;
+        } else if (response.data.data && Array.isArray(response.data.data)) {
+          data = response.data.data;
+        }
       }
+      
+      data = data.map(item => ({
+        ID: item.ID || item.id || null,
+        Name: item.Name || item.name || 'Unnamed',
+        Description: item.Description || item.description || '',
+        Price: item.Price || item.price || 0,
+        ActiveStatus: item.ActiveStatus || item.activeStatus || item.status || 'Inactive'
+      }));
+      
+      setFilteredTherapies(data);
     } catch (error) {
       console.error('Error searching therapies:', error);
     } finally {
@@ -118,9 +162,11 @@ const Therapies = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
+    
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
@@ -147,11 +193,15 @@ const Therapies = () => {
       return;
     }
 
+    const userId = getUserId();
+    if (!userId) return;
+
+    setIsSubmitting(true);
+    
     try {
-      const userId = getUserId();
       const therapyData = {
         ID: isEditMode ? selectedTherapy.ID : null,
-        Name: formData.Name,
+        Name: formData.Name.trim(),
         Description: formData.Description || '',
         Price: parseFloat(formData.Price),
         ActiveStatus: isEditMode ? formData.ActiveStatus : null
@@ -167,24 +217,64 @@ const Therapies = () => {
       
       console.log('Save response:', response.data);
       
-      if (response.data && response.data.success) {
+      if (response.status === 200 || response.status === 201) {
         toast.success(isEditMode ? 'Therapy updated successfully!' : 'Therapy added successfully!');
         closeModal();
-        loadTherapies();
+        await loadTherapies();
       } else {
-        toast.error(response.data?.message || 'Operation failed');
+        const responseData = response.data;
+        const errorMsg = responseData?.message || responseData?.error || 'Operation failed';
+        toast.error(errorMsg);
       }
     } catch (error) {
       console.error('Error saving therapy:', error);
-      console.error('Error response:', error.response?.data);
-      toast.error(error.response?.data?.message || 'Operation failed. Please try again.');
+      
+      let errorMsg = 'Operation failed. Please try again.';
+      
+      if (error.response) {
+        const errorData = error.response.data;
+        if (typeof errorData === 'string') {
+          errorMsg = errorData;
+        } else if (errorData?.message) {
+          errorMsg = errorData.message;
+        } else if (errorData?.error) {
+          errorMsg = errorData.error;
+        }
+        
+        if (errorMsg.toLowerCase().includes('already exists') || 
+            errorMsg.toLowerCase().includes('duplicate')) {
+          setErrors(prev => ({ 
+            ...prev, 
+            Name: 'This therapy already exists. Please use a different name.' 
+          }));
+          toast.error('Therapy already exists. Please use a different name.');
+          setIsSubmitting(false);
+          return;
+        }
+      } else if (error.request) {
+        errorMsg = 'No response from server. Please check your connection.';
+      }
+      
+      toast.error(errorMsg);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id, name) => {
-    if (window.confirm(`Are you sure you want to delete ${name}?`)) {
+    if (!id) {
+      toast.error('Cannot delete: Invalid ID');
+      return;
+    }
+    
+    const userId = getUserId();
+    if (!userId) return;
+    
+    if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
       try {
-        const userId = getUserId();
+        console.log('Deleting therapy with ID:', id);
+        console.log('User ID:', userId);
+        
         const response = await axiosInstance.post(
           `/api/TherapyMasterAPI/Save/${userId}`,
           {
@@ -193,21 +283,45 @@ const Therapies = () => {
           }
         );
         
-        if (response.data && response.data.success) {
-          toast.success(`Therapy ${name} deleted successfully!`);
-          loadTherapies();
+        console.log('Delete response:', response.data);
+        
+        if (response.status === 200 || response.status === 201) {
+          toast.success(`Therapy "${name}" deleted successfully!`);
+          await loadTherapies();
+        } else {
+          toast.error(response.data?.message || 'Failed to delete therapy');
         }
       } catch (error) {
         console.error('Error deleting therapy:', error);
-        toast.error('Failed to delete therapy');
+        
+        let errorMsg = 'Failed to delete therapy';
+        if (error.response) {
+          const errorData = error.response.data;
+          if (typeof errorData === 'string') {
+            errorMsg = errorData;
+          } else if (errorData?.message) {
+            errorMsg = errorData.message;
+          }
+        }
+        toast.error(errorMsg);
       }
     }
   };
 
   const handleToggleStatus = async (id, currentStatus) => {
+    if (!id) {
+      toast.error('Cannot toggle: Invalid ID');
+      return;
+    }
+    
+    const userId = getUserId();
+    if (!userId) return;
+    
     try {
-      const userId = getUserId();
       const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
+      // console.log('Toggling therapy ID:', id, 'to status:', newStatus);
+      // console.log('User ID:', userId);
+      
       const response = await axiosInstance.post(
         `/api/TherapyMasterAPI/Save/${userId}`,
         {
@@ -216,13 +330,27 @@ const Therapies = () => {
         }
       );
       
-      if (response.data && response.data.success) {
+      // console.log('Toggle status response:', response.data);
+      
+      if (response.status === 200 || response.status === 201) {
         toast.success(`Therapy ${newStatus.toLowerCase()}d successfully!`);
-        loadTherapies();
+        await loadTherapies();
+      } else {
+        toast.error(response.data?.message || 'Failed to update status');
       }
     } catch (error) {
       console.error('Error updating status:', error);
-      toast.error('Failed to update status');
+      
+      let errorMsg = 'Failed to update status';
+      if (error.response) {
+        const errorData = error.response.data;
+        if (typeof errorData === 'string') {
+          errorMsg = errorData;
+        } else if (errorData?.message) {
+          errorMsg = errorData.message;
+        }
+      }
+      toast.error(errorMsg);
     }
   };
 
@@ -256,11 +384,13 @@ const Therapies = () => {
     setIsModalOpen(false);
     setSelectedTherapy(null);
     setErrors({});
+    setIsSubmitting(false);
   };
 
   const getStatusBadge = (status) => {
     if (!status) return 'bg-gray-100 text-gray-700';
-    return status === 'Active' 
+    const statusLower = status.toLowerCase();
+    return statusLower === 'active' 
       ? 'bg-green-100 text-green-700'
       : 'bg-gray-100 text-gray-700';
   };
@@ -309,52 +439,61 @@ const Therapies = () => {
               {searchTerm ? 'No therapies found matching your search' : 'No therapies added yet'}
             </div>
           ) : (
-            filteredTherapies.map((therapy) => (
-              <div key={therapy.ID} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <h3 className="font-semibold text-gray-800">{therapy.Name}</h3>
-                    <p className="text-xs text-gray-400 font-mono">ID: {therapy.ID}</p>
+            filteredTherapies.map((therapy) => {
+              const key = therapy.ID || Math.random().toString(36).substring(2);
+              return (
+                <div key={key} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h3 className="font-semibold text-gray-800">{therapy.Name || 'Unnamed'}</h3>
+                      <p className="text-xs text-gray-400 font-mono">ID: {therapy.ID || 'N/A'}</p>
+                    </div>
+                    <button
+                      onClick={() => handleToggleStatus(therapy.ID, therapy.ActiveStatus)}
+                      className="text-xl cursor-pointer"
+                      disabled={!therapy.ID}
+                      title={!therapy.ID ? 'Cannot toggle: Invalid ID' : ''}
+                    >
+                      {therapy.ActiveStatus && therapy.ActiveStatus.toLowerCase() === 'active' ? (
+                        <FaToggleOn className="text-[#57ABB2]" />
+                      ) : (
+                        <FaToggleOff className="text-gray-400" />
+                      )}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => handleToggleStatus(therapy.ID, therapy.ActiveStatus)}
-                    className="text-xl cursor-pointer"
-                  >
-                    {therapy.ActiveStatus === 'Active' ? (
-                      <FaToggleOn className="text-[#57ABB2]" />
-                    ) : (
-                      <FaToggleOff className="text-gray-400" />
-                    )}
-                  </button>
-                </div>
-                <p className="text-sm text-gray-500 mb-3 line-clamp-2">{therapy.Description || 'No description'}</p>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1 text-[#57ABB2] font-semibold">
-                    <FaRupeeSign className="text-sm" />
-                    <span>{therapy.Price}</span>
+                  <p className="text-sm text-gray-500 mb-3 line-clamp-2">{therapy.Description || 'No description'}</p>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1 text-[#57ABB2] font-semibold">
+                      <FaRupeeSign className="text-sm" />
+                      <span>{therapy.Price || 0}</span>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(therapy.ActiveStatus)}`}>
+                      {therapy.ActiveStatus || 'Inactive'}
+                    </span>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(therapy.ActiveStatus)}`}>
-                    {therapy.ActiveStatus || 'Inactive'}
-                  </span>
+                  <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2">
+                    <button
+                      onClick={() => openModal(therapy)}
+                      className="flex-1 p-2 text-[#57ABB2] hover:bg-[#57ABB2]/10 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 text-sm"
+                      disabled={!therapy.ID}
+                      title={!therapy.ID ? 'Cannot edit: Invalid ID' : ''}
+                    >
+                      <FaEdit />
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(therapy.ID, therapy.Name)}
+                      className="flex-1 p-2 text-[#AE261B] hover:bg-[#AE261B]/10 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 text-sm"
+                      disabled={!therapy.ID}
+                      title={!therapy.ID ? 'Cannot delete: Invalid ID' : ''}
+                    >
+                      <FaTrash />
+                      Delete
+                    </button>
+                  </div>
                 </div>
-                <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2">
-                  <button
-                    onClick={() => openModal(therapy)}
-                    className="flex-1 p-2 text-[#57ABB2] hover:bg-[#57ABB2]/10 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 text-sm"
-                  >
-                    <FaEdit />
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(therapy.ID, therapy.Name)}
-                    className="flex-1 p-2 text-[#AE261B] hover:bg-[#AE261B]/10 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 text-sm"
-                  >
-                    <FaTrash />
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
@@ -368,6 +507,9 @@ const Therapies = () => {
                 <h3 className="text-xl font-bold text-gray-800">
                   {isEditMode ? 'Edit Therapy' : 'Add New Therapy'}
                 </h3>
+                <p className="text-sm text-gray-500">
+                  {isEditMode ? 'Update therapy details' : 'Create a new therapy'}
+                </p>
               </div>
               <button
                 onClick={closeModal}
@@ -386,9 +528,15 @@ const Therapies = () => {
                   value={formData.Name}
                   onChange={handleInputChange}
                   className={`w-full px-4 py-2.5 rounded-lg border-2 ${errors.Name ? 'border-[#AE261B]' : 'border-gray-200'} focus:border-[#57ABB2] focus:outline-none transition-colors`}
-                  required
+                  placeholder="Enter therapy name"
+                  autoFocus
                 />
-                {errors.Name && <p className="mt-1 text-xs text-[#AE261B]">{errors.Name}</p>}
+                {errors.Name && (
+                  <p className="mt-1.5 text-xs text-[#AE261B] flex items-center gap-1">
+                    <FaExclamationTriangle className="text-xs" />
+                    {errors.Name}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -419,7 +567,12 @@ const Therapies = () => {
                     min="0"
                   />
                 </div>
-                {errors.Price && <p className="mt-1 text-xs text-[#AE261B]">{errors.Price}</p>}
+                {errors.Price && (
+                  <p className="mt-1.5 text-xs text-[#AE261B] flex items-center gap-1">
+                    <FaExclamationTriangle className="text-xs" />
+                    {errors.Price}
+                  </p>
+                )}
               </div>
 
               {isEditMode && (
@@ -440,10 +593,20 @@ const Therapies = () => {
               <div className="flex gap-3 pt-4 border-t border-gray-100">
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-gradient-to-r from-[#57ABB2] to-[#DE9A0E] text-white rounded-lg font-medium hover:shadow-lg transition-all duration-300 cursor-pointer flex items-center justify-center gap-2"
+                  disabled={isSubmitting}
+                  className="flex-1 py-2.5 bg-gradient-to-r from-[#57ABB2] to-[#DE9A0E] text-white rounded-lg font-medium hover:shadow-lg transition-all duration-300 cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <FaSave />
-                  {isEditMode ? 'Update Therapy' : 'Add Therapy'}
+                  {isSubmitting ? (
+                    <>
+                      <FaSpinner className="animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FaSave />
+                      <span>{isEditMode ? 'Update Therapy' : 'Add Therapy'}</span>
+                    </>
+                  )}
                 </button>
                 <button
                   type="button"

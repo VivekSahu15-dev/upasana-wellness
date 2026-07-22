@@ -22,10 +22,10 @@ const ProtectedRoute = ({ children, adminOnly = false }) => {
           const isAdmin = userRole === 'admin';
           
           if (isAdmin) {
-            console.log('ProtectedRoute - Admin authorized ✅');
+            // console.log('ProtectedRoute - Admin authorized ✅');
             setIsAuthorized(true);
           } else {
-            console.log('ProtectedRoute - Not admin, unauthorized ❌');
+            // console.log('ProtectedRoute - Not admin, unauthorized ❌');
             setIsAuthorized(false);
           }
         } else {

@@ -9,8 +9,7 @@ import {
   FaToggleOn,
   FaToggleOff,
   FaSpinner,
-  FaExclamationTriangle,
-  FaCheckCircle
+  FaExclamationTriangle
 } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import axiosInstance from '../../utils/axiosConfig';
@@ -35,23 +34,24 @@ const PaymentModes = () => {
 
   const getUserId = () => {
     const userId = localStorage.getItem('upasanaUserID');
-    return userId || '1';
-  };
-
-  // Check if name already exists (for duplicate validation)
-  const isNameDuplicate = (name, excludeId = null) => {
-    return paymentModes.some(mode => 
-      mode.Name.toLowerCase() === name.toLowerCase() && 
-      mode.ID !== excludeId
-    );
+    console.log('Getting UserID from localStorage:', userId);
+    // If no userId found, redirect to login
+    if (!userId) {
+      window.location.href = '/admin';
+      return null;
+    }
+    return userId;
   };
 
   const loadPaymentModes = useCallback(async () => {
     if (!isMounted.current) return;
     
+    const userId = getUserId();
+    if (!userId) return;
+    
     setLoading(true);
     try {
-      const userId = getUserId();
+      // console.log('Loading payment modes with UserID:', userId);
       const response = await axiosInstance.post(
         `/api/ModeOfPaymentMasterAPI/Search/${userId}`,
         {
@@ -61,20 +61,28 @@ const PaymentModes = () => {
         }
       );
       
-      console.log('Load payment modes response:', response.data);
+      // console.log('Load payment modes response:', response.data);
       
-      // Handle different response formats
       let data = [];
-      if (response.data && response.data.success) {
-        data = response.data.data || [];
-      } else if (response.data && Array.isArray(response.data)) {
-        data = response.data;
-      } else if (response.data && response.data.data && Array.isArray(response.data.data)) {
-        data = response.data.data;
-      } else if (response.data && response.data.result && Array.isArray(response.data.result)) {
-        data = response.data.result;
+      if (response.data) {
+        if (Array.isArray(response.data)) {
+          data = response.data;
+        } else if (response.data.data && Array.isArray(response.data.data)) {
+          data = response.data.data;
+        } else if (response.data.result && Array.isArray(response.data.result)) {
+          data = response.data.result;
+        } else if (response.data.success && response.data.data && Array.isArray(response.data.data)) {
+          data = response.data.data;
+        }
       }
       
+      data = data.map(item => ({
+        ID: item.ID || item.id || null,
+        Name: item.Name || item.name || 'Unnamed',
+        ActiveStatus: item.ActiveStatus || item.activeStatus || item.status || 'Inactive'
+      }));
+      
+      // console.log('Parsed payment modes data:', data);
       setPaymentModes(data);
       setFilteredModes(data);
     } catch (error) {
@@ -107,9 +115,11 @@ const PaymentModes = () => {
   }, [searchTerm, paymentModes]);
 
   const handleSearch = useCallback(async (term) => {
+    const userId = getUserId();
+    if (!userId) return;
+    
     setSearchLoading(true);
     try {
-      const userId = getUserId();
       const response = await axiosInstance.post(
         `/api/ModeOfPaymentMasterAPI/Search/${userId}`,
         {
@@ -120,13 +130,19 @@ const PaymentModes = () => {
       );
       
       let data = [];
-      if (response.data && response.data.success) {
-        data = response.data.data || [];
-      } else if (response.data && Array.isArray(response.data)) {
-        data = response.data;
-      } else if (response.data && response.data.data && Array.isArray(response.data.data)) {
-        data = response.data.data;
+      if (response.data) {
+        if (Array.isArray(response.data)) {
+          data = response.data;
+        } else if (response.data.data && Array.isArray(response.data.data)) {
+          data = response.data.data;
+        }
       }
+      
+      data = data.map(item => ({
+        ID: item.ID || item.id || null,
+        Name: item.Name || item.name || 'Unnamed',
+        ActiveStatus: item.ActiveStatus || item.activeStatus || item.status || 'Inactive'
+      }));
       
       setFilteredModes(data);
     } catch (error) {
@@ -139,22 +155,8 @@ const PaymentModes = () => {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     
-    // Clear errors when user types
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
-    }
-    
-    // Real-time duplicate check for Name field
-    if (name === 'Name' && value.trim()) {
-      const excludeId = isEditMode ? selectedMode?.ID : null;
-      if (isNameDuplicate(value.trim(), excludeId)) {
-        setErrors(prev => ({ 
-          ...prev, 
-          Name: 'This payment mode already exists. Please use a different name.' 
-        }));
-      } else {
-        setErrors(prev => ({ ...prev, Name: '' }));
-      }
     }
     
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -165,14 +167,6 @@ const PaymentModes = () => {
     
     if (!formData.Name || formData.Name.trim().length < 2) {
       newErrors.Name = 'Payment mode name is required';
-    }
-    
-    // Check for duplicates
-    if (formData.Name && formData.Name.trim()) {
-      const excludeId = isEditMode ? selectedMode?.ID : null;
-      if (isNameDuplicate(formData.Name.trim(), excludeId)) {
-        newErrors.Name = 'This payment mode already exists. Please use a different name.';
-      }
     }
     
     setErrors(newErrors);
@@ -187,130 +181,64 @@ const PaymentModes = () => {
       return;
     }
 
+    const userId = getUserId();
+    if (!userId) return;
+
     setIsSubmitting(true);
     
     try {
-      const userId = getUserId();
-      
       const modeData = {
         ID: isEditMode ? selectedMode.ID : null,
         Name: formData.Name.trim(),
         ActiveStatus: isEditMode ? formData.ActiveStatus : null
       };
 
-      console.log('Saving payment mode data:', modeData);
-      console.log('User ID:', userId);
+      // console.log('Saving payment mode data:', modeData);
+      // console.log('User ID:', userId);
 
       const response = await axiosInstance.post(
         `/api/ModeOfPaymentMasterAPI/Save/${userId}`,
         modeData
       );
       
-      console.log('Save response status:', response.status);
-      console.log('Save response data:', response.data);
+      // console.log('Save response:', response.data);
       
-      // Check if save was successful - handle different response formats
-      let isSuccess = false;
-      let responseMessage = '';
-      
-      // Check for different response formats
-      if (response.data) {
-        // Format 1: { success: true, data: {...}, message: '...' }
-        if (response.data.success === true) {
-          isSuccess = true;
-          responseMessage = response.data.message || (isEditMode ? 'Payment mode updated successfully!' : 'Payment mode added successfully!');
-        }
-        // Format 2: { status: 'success', data: {...} }
-        else if (response.data.status === 'success' || response.data.status === 'Success') {
-          isSuccess = true;
-          responseMessage = response.data.message || (isEditMode ? 'Payment mode updated successfully!' : 'Payment mode added successfully!');
-        }
-        // Format 3: { result: 'success', data: {...} }
-        else if (response.data.result === 'success' || response.data.result === 'Success') {
-          isSuccess = true;
-          responseMessage = response.data.message || (isEditMode ? 'Payment mode updated successfully!' : 'Payment mode added successfully!');
-        }
-        // Format 4: Just status code 200/201 means success
-        else if (response.status === 200 || response.status === 201) {
-          isSuccess = true;
-          responseMessage = isEditMode ? 'Payment mode updated successfully!' : 'Payment mode added successfully!';
-        }
-        // Format 5: If there's an ID in the response (created record)
-        else if (response.data.ID || response.data.id || response.data.data?.ID || response.data.data?.id) {
-          isSuccess = true;
-          responseMessage = isEditMode ? 'Payment mode updated successfully!' : 'Payment mode added successfully!';
-        }
-        // Format 6: Error message from backend
-        else if (response.data.message) {
-          responseMessage = response.data.message;
-          isSuccess = false;
-        }
-      }
-      
-      if (isSuccess) {
-        toast.success(responseMessage);
+      // Check if save was successful
+      if (response.status === 200 || response.status === 201) {
+        toast.success(isEditMode ? 'Payment mode updated successfully!' : 'Payment mode added successfully!');
         closeModal();
-        loadPaymentModes();
+        await loadPaymentModes();
       } else {
-        // Check if it's a duplicate error
-        const errorMsg = response.data?.message || response.data?.error || 'Operation failed';
-        if (errorMsg.toLowerCase().includes('already exists') || errorMsg.toLowerCase().includes('duplicate')) {
-          setErrors(prev => ({ 
-            ...prev, 
-            Name: 'This payment mode already exists. Please use a different name.' 
-          }));
-          toast.error('Payment mode already exists. Please use a different name.');
-        } else {
-          toast.error(errorMsg);
-        }
+        const responseData = response.data;
+        const errorMsg = responseData?.message || responseData?.error || 'Operation failed';
+        toast.error(errorMsg);
       }
     } catch (error) {
       console.error('Error saving payment mode:', error);
       
       let errorMsg = 'Operation failed. Please try again.';
       
-      // Try to extract error message from response
       if (error.response) {
         const errorData = error.response.data;
         console.error('Error response data:', errorData);
         
         if (typeof errorData === 'string') {
           errorMsg = errorData;
-          if (errorData.toLowerCase().includes('already exists') || errorData.toLowerCase().includes('duplicate')) {
-            setErrors(prev => ({ 
-              ...prev, 
-              Name: 'This payment mode already exists. Please use a different name.' 
-            }));
-            toast.error('Payment mode already exists. Please use a different name.');
-            setIsSubmitting(false);
-            return;
-          }
         } else if (errorData?.message) {
           errorMsg = errorData.message;
-          if (errorData.message.toLowerCase().includes('already exists') || errorData.message.toLowerCase().includes('duplicate')) {
-            setErrors(prev => ({ 
-              ...prev, 
-              Name: 'This payment mode already exists. Please use a different name.' 
-            }));
-            toast.error('Payment mode already exists. Please use a different name.');
-            setIsSubmitting(false);
-            return;
-          }
         } else if (errorData?.error) {
           errorMsg = errorData.error;
         }
         
-        // Also check status code
-        if (error.response.status === 400) {
-          if (!errorMsg || errorMsg === 'Operation failed. Please try again.') {
-            errorMsg = 'Bad request. Please check the data and try again.';
-          }
-        } else if (error.response.status === 409) {
-          errorMsg = 'Duplicate entry. This payment mode already exists.';
+        if (errorMsg.toLowerCase().includes('already exists') || 
+            errorMsg.toLowerCase().includes('duplicate')) {
           setErrors(prev => ({ 
             ...prev, 
             Name: 'This payment mode already exists. Please use a different name.' 
           }));
+          toast.error('Payment mode already exists. Please use a different name.');
+          setIsSubmitting(false);
+          return;
         }
       } else if (error.request) {
         errorMsg = 'No response from server. Please check your connection.';
@@ -323,9 +251,19 @@ const PaymentModes = () => {
   };
 
   const handleDelete = async (id, name) => {
+    if (!id) {
+      toast.error('Cannot delete: Invalid ID');
+      return;
+    }
+    
+    const userId = getUserId();
+    if (!userId) return;
+    
     if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
       try {
-        const userId = getUserId();
+        // console.log('Deleting payment mode with ID:', id);
+        // console.log('User ID:', userId);
+        
         const response = await axiosInstance.post(
           `/api/ModeOfPaymentMasterAPI/Save/${userId}`,
           {
@@ -334,36 +272,45 @@ const PaymentModes = () => {
           }
         );
         
-        console.log('Delete response:', response.data);
+        // console.log('Delete response:', response.data);
         
-        // Check success
-        let isSuccess = false;
-        if (response.data && (
-          response.data.success === true ||
-          response.data.status === 'success' ||
-          response.data.result === 'success' ||
-          response.status === 200
-        )) {
-          isSuccess = true;
-        }
-        
-        if (isSuccess) {
+        if (response.status === 200 || response.status === 201) {
           toast.success(`Payment mode "${name}" deleted successfully!`);
-          loadPaymentModes();
+          await loadPaymentModes();
         } else {
           toast.error(response.data?.message || 'Failed to delete payment mode');
         }
       } catch (error) {
         console.error('Error deleting payment mode:', error);
-        toast.error(error.response?.data?.message || 'Failed to delete payment mode');
+        
+        let errorMsg = 'Failed to delete payment mode';
+        if (error.response) {
+          const errorData = error.response.data;
+          if (typeof errorData === 'string') {
+            errorMsg = errorData;
+          } else if (errorData?.message) {
+            errorMsg = errorData.message;
+          }
+        }
+        toast.error(errorMsg);
       }
     }
   };
 
   const handleToggleStatus = async (id, currentStatus) => {
+    if (!id) {
+      toast.error('Cannot toggle: Invalid ID');
+      return;
+    }
+    
+    const userId = getUserId();
+    if (!userId) return;
+    
     try {
-      const userId = getUserId();
       const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
+      // console.log('Toggling payment mode ID:', id, 'to status:', newStatus);
+      // console.log('User ID:', userId);
+      
       const response = await axiosInstance.post(
         `/api/ModeOfPaymentMasterAPI/Save/${userId}`,
         {
@@ -372,27 +319,27 @@ const PaymentModes = () => {
         }
       );
       
-      console.log('Toggle status response:', response.data);
+      // console.log('Toggle status response:', response.data);
       
-      let isSuccess = false;
-      if (response.data && (
-        response.data.success === true ||
-        response.data.status === 'success' ||
-        response.data.result === 'success' ||
-        response.status === 200
-      )) {
-        isSuccess = true;
-      }
-      
-      if (isSuccess) {
+      if (response.status === 200 || response.status === 201) {
         toast.success(`Payment mode ${newStatus.toLowerCase()}d successfully!`);
-        loadPaymentModes();
+        await loadPaymentModes();
       } else {
         toast.error(response.data?.message || 'Failed to update status');
       }
     } catch (error) {
       console.error('Error updating status:', error);
-      toast.error(error.response?.data?.message || 'Failed to update status');
+      
+      let errorMsg = 'Failed to update status';
+      if (error.response) {
+        const errorData = error.response.data;
+        if (typeof errorData === 'string') {
+          errorMsg = errorData;
+        } else if (errorData?.message) {
+          errorMsg = errorData.message;
+        }
+      }
+      toast.error(errorMsg);
     }
   };
 
@@ -427,12 +374,12 @@ const PaymentModes = () => {
 
   const getStatusBadge = (status) => {
     if (!status) return 'bg-gray-100 text-gray-700';
-    return status === 'Active' 
+    const statusLower = status.toLowerCase();
+    return statusLower === 'active' 
       ? 'bg-green-100 text-green-700'
       : 'bg-gray-100 text-gray-700';
   };
 
-  // Common payment mode suggestions
   const commonPaymentModes = ['Cash', 'Card', 'UPI', 'Net Banking', 'Wallet', 'PayPal', 'Google Pay', 'PhonePe', 'Paytm', 'Amazon Pay'];
 
   return (
@@ -479,47 +426,56 @@ const PaymentModes = () => {
               {searchTerm ? 'No payment modes found matching your search' : 'No payment modes added yet'}
             </div>
           ) : (
-            filteredModes.map((mode) => (
-              <div key={mode.ID} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h3 className="font-semibold text-gray-800">{mode.Name}</h3>
-                    <p className="text-xs text-gray-400 font-mono">ID: {mode.ID}</p>
+            filteredModes.map((mode) => {
+              const key = mode.ID || Math.random().toString(36).substring(2);
+              return (
+                <div key={key} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="font-semibold text-gray-800">{mode.Name || 'Unnamed'}</h3>
+                      <p className="text-xs text-gray-400 font-mono">ID: {mode.ID || 'N/A'}</p>
+                    </div>
+                    <button
+                      onClick={() => handleToggleStatus(mode.ID, mode.ActiveStatus)}
+                      className="text-xl cursor-pointer"
+                      disabled={!mode.ID}
+                      title={!mode.ID ? 'Cannot toggle: Invalid ID' : ''}
+                    >
+                      {mode.ActiveStatus && mode.ActiveStatus.toLowerCase() === 'active' ? (
+                        <FaToggleOn className="text-[#57ABB2]" />
+                      ) : (
+                        <FaToggleOff className="text-gray-400" />
+                      )}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => handleToggleStatus(mode.ID, mode.ActiveStatus)}
-                    className="text-xl cursor-pointer"
-                  >
-                    {mode.ActiveStatus === 'Active' ? (
-                      <FaToggleOn className="text-[#57ABB2]" />
-                    ) : (
-                      <FaToggleOff className="text-gray-400" />
-                    )}
-                  </button>
+                  <div className="flex items-center justify-between">
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(mode.ActiveStatus)}`}>
+                      {mode.ActiveStatus || 'Inactive'}
+                    </span>
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2">
+                    <button
+                      onClick={() => openModal(mode)}
+                      className="flex-1 p-2 text-[#57ABB2] hover:bg-[#57ABB2]/10 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 text-sm"
+                      disabled={!mode.ID}
+                      title={!mode.ID ? 'Cannot edit: Invalid ID' : ''}
+                    >
+                      <FaEdit />
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(mode.ID, mode.Name)}
+                      className="flex-1 p-2 text-[#AE261B] hover:bg-[#AE261B]/10 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 text-sm"
+                      disabled={!mode.ID}
+                      title={!mode.ID ? 'Cannot delete: Invalid ID' : ''}
+                    >
+                      <FaTrash />
+                      Delete
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(mode.ActiveStatus)}`}>
-                    {mode.ActiveStatus || 'Inactive'}
-                  </span>
-                </div>
-                <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2">
-                  <button
-                    onClick={() => openModal(mode)}
-                    className="flex-1 p-2 text-[#57ABB2] hover:bg-[#57ABB2]/10 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 text-sm"
-                  >
-                    <FaEdit />
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(mode.ID, mode.Name)}
-                    className="flex-1 p-2 text-[#AE261B] hover:bg-[#AE261B]/10 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 text-sm"
-                  >
-                    <FaTrash />
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}

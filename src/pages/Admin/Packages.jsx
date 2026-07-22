@@ -11,7 +11,8 @@ import {
   FaToggleOn,
   FaToggleOff,
   FaClock,
-  FaSpinner
+  FaSpinner,
+  FaExclamationTriangle
 } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import axiosInstance from '../../utils/axiosConfig';
@@ -35,6 +36,7 @@ const Packages = () => {
     ActiveStatus: null
   });
   const [errors, setErrors] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const isMounted = useRef(true);
 
   const getUserId = () => {
@@ -42,14 +44,14 @@ const Packages = () => {
     return userId || '1';
   };
 
-  // Note: Packages might be in a separate table or part of TherapyMaster
   const loadPackages = useCallback(async () => {
     if (!isMounted.current) return;
     
     setLoading(true);
     try {
       const userId = getUserId();
-      // If packages are stored in TherapyMaster with a category
+      // Assuming packages are stored in TherapyMaster or have their own API
+      // Adjust the endpoint as needed
       const response = await axiosInstance.post(
         `/api/TherapyMasterAPI/Search/${userId}`,
         {
@@ -61,15 +63,21 @@ const Packages = () => {
         }
       );
       
-      if (response.data && response.data.success) {
-        // Filter for packages (you might have a category field)
-        const allData = response.data.data || [];
-        setPackages(allData);
-        setFilteredPackages(allData);
-      } else {
-        setPackages([]);
-        setFilteredPackages([]);
+      console.log('Load packages response:', response.data);
+      
+      let data = [];
+      if (response.data) {
+        if (Array.isArray(response.data)) {
+          data = response.data;
+        } else if (response.data.data && Array.isArray(response.data.data)) {
+          data = response.data.data;
+        } else if (response.data.result && Array.isArray(response.data.result)) {
+          data = response.data.result;
+        }
       }
+      
+      setPackages(data);
+      setFilteredPackages(data);
     } catch (error) {
       console.error('Error loading packages:', error);
       toast.error('Failed to load packages');
@@ -114,9 +122,16 @@ const Packages = () => {
         }
       );
       
-      if (response.data && response.data.success) {
-        setFilteredPackages(response.data.data || []);
+      let data = [];
+      if (response.data) {
+        if (Array.isArray(response.data)) {
+          data = response.data;
+        } else if (response.data.data && Array.isArray(response.data.data)) {
+          data = response.data.data;
+        }
       }
+      
+      setFilteredPackages(data);
     } catch (error) {
       console.error('Error searching packages:', error);
     } finally {
@@ -126,9 +141,11 @@ const Packages = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
+    
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
@@ -155,11 +172,14 @@ const Packages = () => {
       return;
     }
 
+    setIsSubmitting(true);
+    
     try {
       const userId = getUserId();
+      
       const packageData = {
         ID: isEditMode ? selectedPackage.ID : null,
-        Name: formData.Name,
+        Name: formData.Name.trim(),
         Description: formData.Description || '',
         Price: parseFloat(formData.Price),
         Duration: formData.Duration || '',
@@ -167,27 +187,72 @@ const Packages = () => {
         ActiveStatus: isEditMode ? formData.ActiveStatus : null
       };
 
-      // Adjust based on actual API endpoint
+      console.log('Saving package data:', packageData);
+
       const response = await axiosInstance.post(
         `/api/TherapyMasterAPI/Save/${userId}`,
         packageData
       );
       
-      if (response.data && response.data.success) {
-        toast.success(isEditMode ? 'Package updated successfully!' : 'Package added successfully!');
+      console.log('Save response:', response.data);
+      
+      const responseData = response.data;
+      let isSuccess = false;
+      let message = '';
+      
+      if (responseData) {
+        if (responseData.ID || responseData.id || responseData.data?.ID || responseData.data?.id) {
+          isSuccess = true;
+          message = isEditMode ? 'Package updated successfully!' : 'Package added successfully!';
+        } 
+        else if (responseData.success === true || responseData.status === 'success' || responseData.status === 'Success') {
+          isSuccess = true;
+          message = responseData.message || (isEditMode ? 'Package updated successfully!' : 'Package added successfully!');
+        }
+        else if (responseData.message && !responseData.message.toLowerCase().includes('error')) {
+          isSuccess = true;
+          message = responseData.message;
+        }
+        else if (response.status === 200 || response.status === 201) {
+          isSuccess = true;
+          message = isEditMode ? 'Package updated successfully!' : 'Package added successfully!';
+        }
+      }
+      
+      if (isSuccess) {
+        toast.success(message);
         closeModal();
-        loadPackages();
+        await loadPackages();
       } else {
-        toast.error(response.data.message || 'Operation failed');
+        const errorMsg = responseData?.message || responseData?.error || 'Operation failed';
+        toast.error(errorMsg);
       }
     } catch (error) {
       console.error('Error saving package:', error);
-      toast.error(error.response?.data?.message || 'Operation failed. Please try again.');
+      
+      let errorMsg = 'Operation failed. Please try again.';
+      
+      if (error.response) {
+        const errorData = error.response.data;
+        if (typeof errorData === 'string') {
+          errorMsg = errorData;
+        } else if (errorData?.message) {
+          errorMsg = errorData.message;
+        } else if (errorData?.error) {
+          errorMsg = errorData.error;
+        }
+      } else if (error.request) {
+        errorMsg = 'No response from server. Please check your connection.';
+      }
+      
+      toast.error(errorMsg);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id, name) => {
-    if (window.confirm(`Are you sure you want to delete ${name}?`)) {
+    if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
       try {
         const userId = getUserId();
         const response = await axiosInstance.post(
@@ -198,13 +263,12 @@ const Packages = () => {
           }
         );
         
-        if (response.data && response.data.success) {
-          toast.success(`Package ${name} deleted successfully!`);
-          loadPackages();
-        }
+        console.log('Delete response:', response.data);
+        toast.success(`Package "${name}" deleted successfully!`);
+        await loadPackages();
       } catch (error) {
         console.error('Error deleting package:', error);
-        toast.error('Failed to delete package');
+        toast.error(error.response?.data?.message || 'Failed to delete package');
       }
     }
   };
@@ -221,13 +285,12 @@ const Packages = () => {
         }
       );
       
-      if (response.data && response.data.success) {
-        toast.success(`Package ${newStatus.toLowerCase()}d successfully!`);
-        loadPackages();
-      }
+      console.log('Toggle status response:', response.data);
+      toast.success(`Package ${newStatus.toLowerCase()}d successfully!`);
+      await loadPackages();
     } catch (error) {
       console.error('Error updating status:', error);
-      toast.error('Failed to update status');
+      toast.error(error.response?.data?.message || 'Failed to update status');
     }
   };
 
@@ -265,6 +328,7 @@ const Packages = () => {
     setIsModalOpen(false);
     setSelectedPackage(null);
     setErrors({});
+    setIsSubmitting(false);
   };
 
   const getStatusBadge = (status) => {
@@ -422,8 +486,14 @@ const Packages = () => {
                   onChange={handleInputChange}
                   className={`w-full px-4 py-2.5 rounded-lg border-2 ${errors.Name ? 'border-[#AE261B]' : 'border-gray-200'} focus:border-[#57ABB2] focus:outline-none transition-colors`}
                   placeholder="Enter package name"
+                  autoFocus
                 />
-                {errors.Name && <p className="mt-1 text-xs text-[#AE261B]">{errors.Name}</p>}
+                {errors.Name && (
+                  <p className="mt-1.5 text-xs text-[#AE261B] flex items-center gap-1">
+                    <FaExclamationTriangle className="text-xs" />
+                    {errors.Name}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -450,11 +520,17 @@ const Packages = () => {
                       onChange={handleInputChange}
                       className={`w-full pl-10 pr-4 py-2.5 rounded-lg border-2 ${errors.Price ? 'border-[#AE261B]' : 'border-gray-200'} focus:border-[#57ABB2] focus:outline-none transition-colors`}
                       placeholder="0.00"
+                      required
                       step="0.01"
                       min="0"
                     />
                   </div>
-                  {errors.Price && <p className="mt-1 text-xs text-[#AE261B]">{errors.Price}</p>}
+                  {errors.Price && (
+                    <p className="mt-1.5 text-xs text-[#AE261B] flex items-center gap-1">
+                      <FaExclamationTriangle className="text-xs" />
+                      {errors.Price}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Duration</label>
@@ -499,10 +575,20 @@ const Packages = () => {
               <div className="flex gap-3 pt-4 border-t border-gray-100">
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-gradient-to-r from-[#57ABB2] to-[#DE9A0E] text-white rounded-lg font-medium hover:shadow-lg transition-all duration-300 cursor-pointer flex items-center justify-center gap-2"
+                  disabled={isSubmitting}
+                  className="flex-1 py-2.5 bg-gradient-to-r from-[#57ABB2] to-[#DE9A0E] text-white rounded-lg font-medium hover:shadow-lg transition-all duration-300 cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <FaSave />
-                  {isEditMode ? 'Update Package' : 'Add Package'}
+                  {isSubmitting ? (
+                    <>
+                      <FaSpinner className="animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FaSave />
+                      <span>{isEditMode ? 'Update Package' : 'Add Package'}</span>
+                    </>
+                  )}
                 </button>
                 <button
                   type="button"

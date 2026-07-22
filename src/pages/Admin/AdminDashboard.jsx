@@ -17,22 +17,31 @@ import Therapies from './Therapies';
 import PaymentModes from './PaymentModes';
 import Packages from './Packages';
 import { toast } from 'react-toastify';
+import axiosInstance from '../../utils/axiosConfig';
 
 const AdminDashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState(null);
+  const [stats, setStats] = useState({
+    patients: 0,
+    therapies: 0,
+    paymentModes: 0,
+    packages: 0
+  });
   const navigate = useNavigate();
   const location = useLocation();
 
+  const getUserId = () => {
+    const userId = localStorage.getItem('upasanaUserID');
+    return userId || '1';
+  };
+
   useEffect(() => {
-    // Check authentication from localStorage
     const token = localStorage.getItem('upasanaToken');
     const userData = localStorage.getItem('upasanaUser');
     
-    
     if (!token || !userData) {
-      console.log('No auth data, redirecting to admin login');
       navigate('/admin', { replace: true });
       return;
     }
@@ -40,11 +49,11 @@ const AdminDashboard = () => {
     try {
       const parsedUser = JSON.parse(userData);
       if (parsedUser.role !== 'admin') {
-        console.log('Not admin user, redirecting');
         navigate('/admin', { replace: true });
         return;
       }
       setUser(parsedUser);
+      fetchStats();
     } catch (error) {
       console.error('Error parsing user data:', error);
       navigate('/admin', { replace: true });
@@ -53,6 +62,116 @@ const AdminDashboard = () => {
     
     setIsLoading(false);
   }, [navigate]);
+
+  const fetchStats = async () => {
+    const userId = getUserId();
+    if (!userId) return;
+
+    try {
+      // Fetch patients count
+      const patientsRes = await axiosInstance.post(
+        `/api/PatientsMasterAPI/Search/${userId}`,
+        {
+          ID: null,
+          Name: null,
+          DOB: null,
+          Contact: null,
+          Address: null,
+          CountryID: null,
+          StateID: null,
+          Gender: null,
+          ActiveStatus: null
+        }
+      );
+      
+      let patientsData = [];
+      if (patientsRes.data) {
+        if (Array.isArray(patientsRes.data)) {
+          patientsData = patientsRes.data;
+        } else if (patientsRes.data.data && Array.isArray(patientsRes.data.data)) {
+          patientsData = patientsRes.data.data;
+        }
+      }
+
+      // Fetch therapies count
+      const therapiesRes = await axiosInstance.post(
+        `/api/TherapyMasterAPI/Search/${userId}`,
+        {
+          ID: null,
+          Name: null,
+          Description: null,
+          Price: null,
+          ActiveStatus: null
+        }
+      );
+      
+      let therapiesData = [];
+      if (therapiesRes.data) {
+        if (Array.isArray(therapiesRes.data)) {
+          therapiesData = therapiesRes.data;
+        } else if (therapiesRes.data.data && Array.isArray(therapiesRes.data.data)) {
+          therapiesData = therapiesRes.data.data;
+        }
+      }
+
+      // Fetch payment modes count
+      const paymentRes = await axiosInstance.post(
+        `/api/ModeOfPaymentMasterAPI/Search/${userId}`,
+        {
+          ID: null,
+          Name: null,
+          ActiveStatus: null
+        }
+      );
+      
+      let paymentData = [];
+      if (paymentRes.data) {
+        if (Array.isArray(paymentRes.data)) {
+          paymentData = paymentRes.data;
+        } else if (paymentRes.data.data && Array.isArray(paymentRes.data.data)) {
+          paymentData = paymentRes.data.data;
+        }
+      }
+
+      // Fetch packages count (using TherapyMaster for now)
+      const packagesRes = await axiosInstance.post(
+        `/api/TherapyMasterAPI/Search/${userId}`,
+        {
+          ID: null,
+          Name: null,
+          Description: null,
+          Price: null,
+          ActiveStatus: null
+        }
+      );
+      
+      let packagesData = [];
+      if (packagesRes.data) {
+        if (Array.isArray(packagesRes.data)) {
+          packagesData = packagesRes.data;
+        } else if (packagesRes.data.data && Array.isArray(packagesRes.data.data)) {
+          packagesData = packagesRes.data.data;
+        }
+      }
+
+      setStats({
+        patients: patientsData.length,
+        therapies: therapiesData.length,
+        paymentModes: paymentData.length,
+        packages: packagesData.length
+      });
+
+      // console.log('Stats updated:', {
+      //   patients: patientsData.length,
+      //   therapies: therapiesData.length,
+      //   paymentModes: paymentData.length,
+      //   packages: packagesData.length
+      // });
+
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('upasanaToken');
@@ -67,7 +186,7 @@ const AdminDashboard = () => {
     { path: '/admin/dashboard/patients', icon: <FaUsers />, label: 'Patients' },
     { path: '/admin/dashboard/therapies', icon: <FaClipboardList />, label: 'Therapies' },
     { path: '/admin/dashboard/payments', icon: <FaCreditCard />, label: 'Payment Modes' },
-    { path: '/admin/dashboard/packages', icon: <FaBox />, label: 'Packages' },
+    // { path: '/admin/dashboard/packages', icon: <FaBox />, label: 'Packages' },
   ];
 
   const isActive = (path) => {
@@ -90,7 +209,6 @@ const AdminDashboard = () => {
 
   return (
     <div className="min-h-screen bg-[#E7E1D5] flex">
-      {/* Mobile Menu Button */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
         className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white rounded-lg shadow-lg"
@@ -98,7 +216,6 @@ const AdminDashboard = () => {
         {sidebarOpen ? <FaTimes className="text-[#57ABB2] text-xl" /> : <FaBars className="text-[#57ABB2] text-xl" />}
       </button>
 
-      {/* Sidebar */}
       <div className={`
         fixed lg:relative z-40
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
@@ -107,7 +224,6 @@ const AdminDashboard = () => {
         w-64 min-h-screen bg-white shadow-xl
         flex flex-col
       `}>
-        {/* Sidebar Header */}
         <div className="p-6 border-b border-gray-100">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-[#57ABB2]/10 rounded-lg">
@@ -120,7 +236,6 @@ const AdminDashboard = () => {
           </div>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {menuItems.map((item) => (
             <Link
@@ -144,7 +259,6 @@ const AdminDashboard = () => {
           ))}
         </nav>
 
-        {/* User Info */}
         <div className="px-4 py-3 border-t border-gray-100">
           <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-xl">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#57ABB2]/20 to-[#DE9A0E]/20 flex items-center justify-center text-[#57ABB2] font-semibold text-sm">
@@ -157,7 +271,6 @@ const AdminDashboard = () => {
           </div>
         </div>
 
-        {/* Logout Button */}
         <div className="p-4 border-t border-gray-100">
           <button
             onClick={handleLogout}
@@ -169,11 +282,10 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 p-4 lg:p-8">
         <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-lg p-6 lg:p-8 min-h-[calc(100vh-2rem)]">
           <Routes>
-            <Route path="/" element={<AdminOverview />} />
+            <Route path="/" element={<AdminOverview stats={stats} />} />
             <Route path="patients" element={<Patients />} />
             <Route path="therapies" element={<Therapies />} />
             <Route path="payments" element={<PaymentModes />} />
@@ -183,7 +295,6 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      {/* Overlay for mobile */}
       {sidebarOpen && (
         <div 
           className="fixed inset-0 bg-black/20 z-30 lg:hidden"
@@ -195,18 +306,12 @@ const AdminDashboard = () => {
 };
 
 // Admin Overview Component
-const AdminOverview = () => {
-  // Get counts from localStorage (for demo)
-  const getCount = (key) => {
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data).length : 0;
-  };
-
-  const stats = [
-    { label: 'Total Patients', value: getCount('upasana_patients'), color: '#57ABB2' },
-    { label: 'Active Therapies', value: getCount('upasana_therapies'), color: '#DE9A0E' },
-    { label: 'Payment Modes', value: getCount('upasana_payment_modes'), color: '#E39D17' },
-    { label: 'Packages', value: getCount('upasana_packages'), color: '#AE261B' },
+const AdminOverview = ({ stats }) => {
+  const statsData = [
+    { label: 'Total Patients', value: stats.patients || 0, color: '#57ABB2' },
+    { label: 'Active Therapies', value: stats.therapies || 0, color: '#DE9A0E' },
+    { label: 'Payment Modes', value: stats.paymentModes || 0, color: '#E39D17' },
+    // { label: 'Packages', value: stats.packages || 0, color: '#AE261B' },
   ];
 
   return (
@@ -216,8 +321,8 @@ const AdminOverview = () => {
         <p className="text-gray-500 mt-1">Welcome to Admin Panel</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {stats.map((stat, index) => (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+        {statsData.map((stat, index) => (
           <div key={index} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-50">
             <p className="text-sm text-gray-500">{stat.label}</p>
             <p className="text-3xl font-bold mt-2" style={{ color: stat.color }}>
@@ -246,24 +351,7 @@ const AdminOverview = () => {
             <span className="px-3 py-1 bg-white rounded-full text-xs text-[#E39D17] shadow-sm">Payment Mode</span>
           </div>
         </div>
-        <div className="bg-gradient-to-br from-[#AE261B]/5 to-[#E39D17]/5 rounded-2xl p-6 border border-gray-100">
-          <h3 className="font-semibold text-gray-800 mb-2">System Status</h3>
-          <p className="text-sm text-gray-500">All data is stored locally for demo.</p>
-          <div className="mt-4 space-y-2">
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-              <span>LocalStorage active</span>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-              <span>Data persistence enabled</span>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
-              <span>API connection: Ready</span>
-            </div>
-          </div>
-        </div>
+    
       </div>
     </div>
   );

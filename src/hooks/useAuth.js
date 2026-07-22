@@ -28,7 +28,7 @@ export const AuthProvider = ({ children }) => {
         setUser(userData);
         setIsAuthenticated(true);
         setupAxiosInterceptors(savedToken);
-        console.log('Auth restored successfully');
+        // console.log('Auth restored successfully');
       } catch (error) {
         console.error('Error parsing user data:', error);
         localStorage.removeItem('upasanaToken');

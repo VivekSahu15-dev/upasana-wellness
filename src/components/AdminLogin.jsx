@@ -39,7 +39,6 @@ const AdminLogin = () => {
     resolver: yupResolver(loginSchema)
   });
 
-  // Check if already logged in
   useEffect(() => {
     const token = localStorage.getItem('upasanaToken');
     const user = localStorage.getItem('upasanaUser');
@@ -54,6 +53,7 @@ const AdminLogin = () => {
     setError('');
     
     try {
+      console.log('Attempting login with:', { username: data.username });
       
       const loginFrom = 'web';
       const response = await axiosInstance.post(`/api/UserMasterAPI/Login/${loginFrom}`, {
@@ -61,18 +61,17 @@ const AdminLogin = () => {
         password: data.password
       });
       
+      console.log('Login response:', response.data);
       
-      // Check if login was successful
       const isSuccess = response.data?.loginStatus === 'ON' || response.data?.success === true;
       
       if (isSuccess) {
-        // Get the actual user ID from the response
+        // Extract User ID from the response
         const userId = response.data._dataBaseMaster?.ID || 
                        response.data.userId || 
                        response.data.id || 
                        response.data.user?.ID || 
-                       response.data.user?.id || 
-                       null;
+                       response.data.user?.id;
         
         if (!userId) {
           console.error('No User ID found in response:', response.data);
@@ -82,12 +81,11 @@ const AdminLogin = () => {
           return;
         }
         
+        console.log('Extracted User ID:', userId);
         
-        // Get role from response and normalize to lowercase
         const rawRole = response.data.accountType || response.data.role || 'Admin';
         const normalizedRole = rawRole.toLowerCase();
         
-        // Get user data from response
         const userData = {
           id: userId,
           name: response.data.userName || response.data.name || data.username,
@@ -97,15 +95,14 @@ const AdminLogin = () => {
           contact: response.data._dataBaseMaster?.Contact || ''
         };
         
-        // Generate a token
         const token = response.data.token || btoa(JSON.stringify(userData));
         
-        // Save to localStorage directly
+        // Store in localStorage
         localStorage.setItem('upasanaToken', token);
         localStorage.setItem('upasanaUser', JSON.stringify(userData));
         localStorage.setItem('upasanaUserID', userId.toString());
         
-        
+        console.log('Stored User ID:', localStorage.getItem('upasanaUserID'));
         
         toast.success(`Welcome ${userData.name}! Login successful.`);
         navigate('/admin/dashboard', { replace: true });
@@ -225,9 +222,6 @@ const AdminLogin = () => {
               <div className="mb-4 p-3 bg-blue-50 border-l-4 border-blue-500 rounded-lg">
                 <p className="text-xs text-blue-600">
                   <strong>Login:</strong> Enter your credentials
-                </p>
-                <p className="text-xs text-blue-400 mt-1">
-                  <strong>API Key:</strong> {import.meta.env.VITE_API_KEY ? 'Configured ✅' : 'Missing ❌'}
                 </p>
               </div>
 
