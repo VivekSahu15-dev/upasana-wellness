@@ -225,10 +225,8 @@ const AdminDashboard = () => {
         flex flex-col
       `}>
         <div className="p-6 border-b border-gray-100">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-[#57ABB2]/10 rounded-lg">
-              <FaUserShield className="text-[#57ABB2] text-xl" />
-            </div>
+          <div className="items-center gap-3">
+              <img src="/logo.png" alt="Upasana Wellness Logo" className="w-32 h-auto" />
             <div>
               <h2 className="font-bold text-gray-800 text-lg">Admin Panel</h2>
               <p className="text-xs text-gray-400">Upasana Wellness</p>

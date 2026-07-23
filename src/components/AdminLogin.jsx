@@ -202,7 +202,7 @@ const AdminLogin = () => {
               <div className="text-center mb-8">
                 <div className="flex justify-center mb-4">
                   <div className="p-4 bg-[#57ABB2]/10 rounded-2xl">
-                    <FaUserShield className="text-4xl text-[#57ABB2]" />
+                   <img src="/logo.png" alt="Upasana Wellness Logo" className="w-24 h-auto" />
                   </div>
                 </div>
                 <h1 className="text-3xl font-bold">
