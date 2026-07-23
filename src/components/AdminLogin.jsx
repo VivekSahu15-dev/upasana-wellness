@@ -219,11 +219,7 @@ const AdminLogin = () => {
                 </div>
               )}
 
-              <div className="mb-4 p-3 bg-blue-50 border-l-4 border-blue-500 rounded-lg">
-                <p className="text-xs text-blue-600">
-                  <strong>Login:</strong> Enter your credentials
-                </p>
-              </div>
+             
 
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
                 <div className="relative group">

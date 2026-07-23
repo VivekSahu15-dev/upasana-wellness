@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
 
 const AuthContext = createContext(null);
+let logoutTimer = null;
 
 export const setupAxiosInterceptors = (token) => {
   if (token) {
@@ -17,6 +18,43 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // Clear logout timer
+  const clearLogoutTimer = () => {
+    if (logoutTimer) {
+      clearTimeout(logoutTimer);
+      logoutTimer = null;
+    }
+  };
+
+  // Set logout timer (4 hours)
+  const setLogoutTimer = () => {
+    clearLogoutTimer();
+    logoutTimer = setTimeout(() => {
+      console.log('Auto-logout: Session expired after 4 hours');
+      logout();
+      // Redirect to login
+      window.location.href = '/admin';
+    }, 4 * 60 * 60 * 1000); // 4 hours in milliseconds
+  };
+
+  const logout = () => {
+    setToken(null);
+    setUser(null);
+    setIsAuthenticated(false);
+    localStorage.removeItem('upasanaToken');
+    localStorage.removeItem('upasanaUser');
+    localStorage.removeItem('upasanaUserID');
+    setupAxiosInterceptors(null);
+    clearLogoutTimer();
+  };
+
+  // Reset timer on user activity
+  const resetLogoutTimer = () => {
+    if (isAuthenticated) {
+      setLogoutTimer();
+    }
+  };
+
   useEffect(() => {
     const savedToken = localStorage.getItem('upasanaToken');
     const savedUser = localStorage.getItem('upasanaUser');
@@ -28,37 +66,51 @@ export const AuthProvider = ({ children }) => {
         setUser(userData);
         setIsAuthenticated(true);
         setupAxiosInterceptors(savedToken);
-        // console.log('Auth restored successfully');
+        // Start logout timer
+        setLogoutTimer();
       } catch (error) {
         console.error('Error parsing user data:', error);
         localStorage.removeItem('upasanaToken');
         localStorage.removeItem('upasanaUser');
+        localStorage.removeItem('upasanaUserID');
       }
     }
     setLoading(false);
   }, []);
 
+  // Set up activity listeners
+  useEffect(() => {
+    if (isAuthenticated) {
+      const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+      
+      const handleActivity = () => {
+        resetLogoutTimer();
+      };
+      
+      events.forEach(event => {
+        document.addEventListener(event, handleActivity);
+      });
+      
+      return () => {
+        events.forEach(event => {
+          document.removeEventListener(event, handleActivity);
+        });
+        clearLogoutTimer();
+      };
+    }
+  }, [isAuthenticated]);
+
   const login = (newToken, userData) => {
-    console.log('Login called');
     setToken(newToken);
     setUser(userData);
     setIsAuthenticated(true);
     localStorage.setItem('upasanaToken', newToken);
     localStorage.setItem('upasanaUser', JSON.stringify(userData));
-    localStorage.setItem('upasanaUserID', userData.id ? userData.id.toString() : '1');
+    if (userData.id) {
+      localStorage.setItem('upasanaUserID', userData.id.toString());
+    }
     setupAxiosInterceptors(newToken);
-    console.log('Login successful, data saved');
-  };
-
-  const logout = () => {
-    console.log('Logout called');
-    setToken(null);
-    setUser(null);
-    setIsAuthenticated(false);
-    localStorage.removeItem('upasanaToken');
-    localStorage.removeItem('upasanaUser');
-    localStorage.removeItem('upasanaUserID');
-    setupAxiosInterceptors(null);
+    setLogoutTimer();
   };
 
   const value = { 

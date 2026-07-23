@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  FaPlus, 
-  FaEdit, 
-  FaTrash, 
+import {
+  FaPlus,
+  FaEdit,
+  FaTrash,
   FaSearch,
   FaTimes,
   FaSave,
@@ -34,10 +34,10 @@ const Therapies = () => {
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isMounted = useRef(true);
+  const searchTimeout = useRef(null);
 
   const getUserId = () => {
     const userId = localStorage.getItem('upasanaUserID');
-    // console.log('Getting UserID from localStorage:', userId);
     if (!userId) {
       window.location.href = '/admin';
       return null;
@@ -47,13 +47,12 @@ const Therapies = () => {
 
   const loadTherapies = useCallback(async () => {
     if (!isMounted.current) return;
-    
+
     const userId = getUserId();
     if (!userId) return;
-    
+
     setLoading(true);
     try {
-      // console.log('Loading therapies with UserID:', userId);
       const response = await axiosInstance.post(
         `/api/TherapyMasterAPI/Search/${userId}`,
         {
@@ -64,20 +63,16 @@ const Therapies = () => {
           ActiveStatus: null
         }
       );
-      
-      // console.log('Load therapies response:', response.data);
-      
+
       let data = [];
       if (response.data) {
         if (Array.isArray(response.data)) {
           data = response.data;
         } else if (response.data.data && Array.isArray(response.data.data)) {
           data = response.data.data;
-        } else if (response.data.result && Array.isArray(response.data.result)) {
-          data = response.data.result;
         }
       }
-      
+
       data = data.map(item => ({
         ID: item.ID || item.id || null,
         Name: item.Name || item.name || 'Unnamed',
@@ -85,12 +80,10 @@ const Therapies = () => {
         Price: item.Price || item.price || 0,
         ActiveStatus: item.ActiveStatus || item.activeStatus || item.status || 'Inactive'
       }));
-      
-      // console.log('Parsed therapies data:', data);
+
       setTherapies(data);
       setFilteredTherapies(data);
     } catch (error) {
-      console.error('Error loading therapies:', error);
       toast.error('Failed to load therapies');
     } finally {
       setLoading(false);
@@ -100,41 +93,47 @@ const Therapies = () => {
   useEffect(() => {
     isMounted.current = true;
     loadTherapies();
-    
+
     return () => {
       isMounted.current = false;
     };
   }, [loadTherapies]);
 
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (searchTerm) {
-        handleSearch(searchTerm);
-      } else {
-        setFilteredTherapies(therapies);
-      }
-    }, 300);
+  const handleSearchInput = (e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
 
-    return () => clearTimeout(timeoutId);
-  }, [searchTerm, therapies]);
+    if (searchTimeout.current) {
+      clearTimeout(searchTimeout.current);
+    }
 
-  const handleSearch = useCallback(async (term) => {
+    searchTimeout.current = setTimeout(() => {
+      searchTherapies(value);
+    }, 500);
+  };
+
+  const searchTherapies = useCallback(async (term) => {
+    if (!term || term.trim() === '') {
+      setFilteredTherapies(therapies);
+      return;
+    }
+
     const userId = getUserId();
     if (!userId) return;
-    
+
     setSearchLoading(true);
     try {
       const response = await axiosInstance.post(
         `/api/TherapyMasterAPI/Search/${userId}`,
         {
           ID: null,
-          Name: term || null,
+          Name: term.trim(),
           Description: null,
           Price: null,
           ActiveStatus: null
         }
       );
-      
+
       let data = [];
       if (response.data) {
         if (Array.isArray(response.data)) {
@@ -143,7 +142,7 @@ const Therapies = () => {
           data = response.data.data;
         }
       }
-      
+
       data = data.map(item => ({
         ID: item.ID || item.id || null,
         Name: item.Name || item.name || 'Unnamed',
@@ -151,43 +150,44 @@ const Therapies = () => {
         Price: item.Price || item.price || 0,
         ActiveStatus: item.ActiveStatus || item.activeStatus || item.status || 'Inactive'
       }));
-      
+
       setFilteredTherapies(data);
     } catch (error) {
-      console.error('Error searching therapies:', error);
+      const filtered = therapies.filter(therapy =>
+        therapy.Name?.toLowerCase().includes(term.toLowerCase())
+      );
+      setFilteredTherapies(filtered);
     } finally {
       setSearchLoading(false);
     }
-  }, []);
+  }, [therapies]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
-    
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const validateForm = () => {
     const newErrors = {};
-    
+
     if (!formData.Name || formData.Name.trim().length < 2) {
       newErrors.Name = 'Therapy name is required';
     }
-    
+
     if (!formData.Price || parseFloat(formData.Price) <= 0) {
       newErrors.Price = 'Please enter a valid price';
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!validateForm()) {
       toast.warning('Please fix the errors in the form');
       return;
@@ -197,7 +197,7 @@ const Therapies = () => {
     if (!userId) return;
 
     setIsSubmitting(true);
-    
+
     try {
       const therapyData = {
         ID: isEditMode ? selectedTherapy.ID : null,
@@ -207,104 +207,23 @@ const Therapies = () => {
         ActiveStatus: isEditMode ? formData.ActiveStatus : null
       };
 
-      console.log('Saving therapy data:', therapyData);
-      console.log('User ID:', userId);
-
       const response = await axiosInstance.post(
         `/api/TherapyMasterAPI/Save/${userId}`,
         therapyData
       );
-      
-      console.log('Save response:', response.data);
-      
+
       if (response.status === 200 || response.status === 201) {
         toast.success(isEditMode ? 'Therapy updated successfully!' : 'Therapy added successfully!');
         closeModal();
-        await loadTherapies();
+        loadTherapies();
+        setSearchTerm('');
       } else {
-        const responseData = response.data;
-        const errorMsg = responseData?.message || responseData?.error || 'Operation failed';
-        toast.error(errorMsg);
+        toast.error(response.data?.message || 'Operation failed');
       }
     } catch (error) {
-      console.error('Error saving therapy:', error);
-      
-      let errorMsg = 'Operation failed. Please try again.';
-      
-      if (error.response) {
-        const errorData = error.response.data;
-        if (typeof errorData === 'string') {
-          errorMsg = errorData;
-        } else if (errorData?.message) {
-          errorMsg = errorData.message;
-        } else if (errorData?.error) {
-          errorMsg = errorData.error;
-        }
-        
-        if (errorMsg.toLowerCase().includes('already exists') || 
-            errorMsg.toLowerCase().includes('duplicate')) {
-          setErrors(prev => ({ 
-            ...prev, 
-            Name: 'This therapy already exists. Please use a different name.' 
-          }));
-          toast.error('Therapy already exists. Please use a different name.');
-          setIsSubmitting(false);
-          return;
-        }
-      } else if (error.request) {
-        errorMsg = 'No response from server. Please check your connection.';
-      }
-      
-      toast.error(errorMsg);
+      toast.error(error.response?.data?.message || 'Operation failed. Please try again.');
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleDelete = async (id, name) => {
-    if (!id) {
-      toast.error('Cannot delete: Invalid ID');
-      return;
-    }
-    
-    const userId = getUserId();
-    if (!userId) return;
-    
-    if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
-      try {
-        console.log('Deleting therapy with ID:', id);
-        console.log('User ID:', userId);
-        
-        const response = await axiosInstance.post(
-          `/api/TherapyMasterAPI/Save/${userId}`,
-          {
-            ID: id,
-            ActiveStatus: 'Inactive'
-          }
-        );
-        
-        console.log('Delete response:', response.data);
-        
-        if (response.status === 200 || response.status === 201) {
-          toast.success(`Therapy "${name}" deleted successfully!`);
-          await loadTherapies();
-        } else {
-          toast.error(response.data?.message || 'Failed to delete therapy');
-        }
-      } catch (error) {
-        console.error('Error deleting therapy:', error);
-        
-        let errorMsg = 'Failed to delete therapy';
-        if (error.response) {
-          const errorData = error.response.data;
-          if (typeof errorData === 'string') {
-            errorMsg = errorData;
-          } else if (errorData?.message) {
-            errorMsg = errorData.message;
-          }
-        }
-        toast.error(errorMsg);
-      }
     }
   };
 
@@ -313,44 +232,104 @@ const Therapies = () => {
       toast.error('Cannot toggle: Invalid ID');
       return;
     }
-    
+
     const userId = getUserId();
     if (!userId) return;
-    
+
     try {
       const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
-      // console.log('Toggling therapy ID:', id, 'to status:', newStatus);
-      // console.log('User ID:', userId);
-      
+
+      // Find the therapy to get all fields
+      const therapy = therapies.find(t => t.ID === id);
+      if (!therapy) {
+        toast.error('Therapy not found');
+        return;
+      }
+
+      // Send ALL fields with the updated status
+      const toggleData = {
+        ID: therapy.ID,
+        Name: therapy.Name || '',
+        Description: therapy.Description || '',
+        Price: parseFloat(therapy.Price) || 0,
+        ActiveStatus: newStatus
+      };
+
       const response = await axiosInstance.post(
         `/api/TherapyMasterAPI/Save/${userId}`,
-        {
-          ID: id,
-          ActiveStatus: newStatus
-        }
+        toggleData
       );
-      
-      // console.log('Toggle status response:', response.data);
-      
+
       if (response.status === 200 || response.status === 201) {
         toast.success(`Therapy ${newStatus.toLowerCase()}d successfully!`);
-        await loadTherapies();
+        loadTherapies();
       } else {
         toast.error(response.data?.message || 'Failed to update status');
       }
     } catch (error) {
-      console.error('Error updating status:', error);
-      
-      let errorMsg = 'Failed to update status';
-      if (error.response) {
-        const errorData = error.response.data;
-        if (typeof errorData === 'string') {
-          errorMsg = errorData;
-        } else if (errorData?.message) {
-          errorMsg = errorData.message;
-        }
+      toast.error(error.response?.data?.message || 'Failed to update status');
+    }
+  };
+
+  const handleDelete = (id, name) => {
+    if (!id) {
+      toast.error('Cannot delete: Invalid ID');
+      return;
+    }
+
+    const confirmId = toast.info(
+      <div>
+        <p className="font-medium">Delete Therapy</p>
+        <p className="text-sm text-gray-500">Are you sure you want to delete "{name}"?</p>
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={() => {
+              toast.dismiss(confirmId);
+              performDelete(id, name);
+            }}
+            className="px-4 py-1.5 bg-[#AE261B] text-white rounded-lg text-sm hover:bg-[#AE261B]/80"
+          >
+            Delete
+          </button>
+          <button
+            onClick={() => toast.dismiss(confirmId)}
+            className="px-4 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>,
+      {
+        autoClose: false,
+        closeOnClick: false,
+        draggable: false,
+        position: "top-center"
       }
-      toast.error(errorMsg);
+    );
+  };
+
+  const performDelete = async (id, name) => {
+    const userId = getUserId();
+    if (!userId) return;
+
+    try {
+      const response = await axiosInstance.post(
+        `/api/TherapyMasterAPI/Save/${userId}`,
+        {
+          ID: id,
+          ActiveStatus: 'Inactive'
+        }
+      );
+
+      if (response.status === 200 || response.status === 201) {
+        toast.success(`Therapy "${name}" deleted successfully!`);
+        loadTherapies();
+        setSearchTerm('');
+      } else {
+        toast.error(response.data?.message || 'Failed to delete therapy');
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to delete therapy');
     }
   };
 
@@ -390,7 +369,7 @@ const Therapies = () => {
   const getStatusBadge = (status) => {
     if (!status) return 'bg-gray-100 text-gray-700';
     const statusLower = status.toLowerCase();
-    return statusLower === 'active' 
+    return statusLower === 'active'
       ? 'bg-green-100 text-green-700'
       : 'bg-gray-100 text-gray-700';
   };
@@ -419,13 +398,32 @@ const Therapies = () => {
             type="text"
             placeholder="Search therapies by name..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={handleSearchInput}
             className="w-full pl-10 pr-12 py-2.5 rounded-xl border-2 border-gray-200 focus:border-[#57ABB2] focus:outline-none transition-colors bg-white/50"
           />
           {searchLoading && (
             <FaSpinner className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#57ABB2] animate-spin" />
           )}
+          {searchTerm && !searchLoading && (
+            <button
+              onClick={() => {
+                setSearchTerm('');
+                setFilteredTherapies(therapies);
+              }}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+            >
+              <FaTimes />
+            </button>
+          )}
         </div>
+        {searchTerm && (
+          <p className="text-xs text-gray-400 mt-1">
+            Showing results for: <span className="font-medium text-gray-600">"{searchTerm}"</span>
+            {filteredTherapies.length > 0 && (
+              <span className="ml-1">({filteredTherapies.length} found)</span>
+            )}
+          </p>
+        )}
       </div>
 
       {loading ? (
@@ -439,69 +437,64 @@ const Therapies = () => {
               {searchTerm ? 'No therapies found matching your search' : 'No therapies added yet'}
             </div>
           ) : (
-            filteredTherapies.map((therapy) => {
-              const key = therapy.ID || Math.random().toString(36).substring(2);
-              return (
-                <div key={key} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <h3 className="font-semibold text-gray-800">{therapy.Name || 'Unnamed'}</h3>
-                      <p className="text-xs text-gray-400 font-mono">ID: {therapy.ID || 'N/A'}</p>
-                    </div>
-                    <button
-                      onClick={() => handleToggleStatus(therapy.ID, therapy.ActiveStatus)}
-                      className="text-xl cursor-pointer"
-                      disabled={!therapy.ID}
-                      title={!therapy.ID ? 'Cannot toggle: Invalid ID' : ''}
-                    >
-                      {therapy.ActiveStatus && therapy.ActiveStatus.toLowerCase() === 'active' ? (
-                        <FaToggleOn className="text-[#57ABB2]" />
-                      ) : (
-                        <FaToggleOff className="text-gray-400" />
-                      )}
-                    </button>
+            filteredTherapies.map((therapy) => (
+              <div key={therapy.ID || Math.random().toString(36).substring(2)} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <h3 className="font-semibold text-gray-800">{therapy.Name}</h3>
+                    <p className="text-xs text-gray-400 font-mono">ID: {therapy.ID}</p>
                   </div>
-                  <p className="text-sm text-gray-500 mb-3 line-clamp-2">{therapy.Description || 'No description'}</p>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1 text-[#57ABB2] font-semibold">
-                      <FaRupeeSign className="text-sm" />
-                      <span>{therapy.Price || 0}</span>
-                    </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(therapy.ActiveStatus)}`}>
-                      {therapy.ActiveStatus || 'Inactive'}
-                    </span>
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2">
-                    <button
-                      onClick={() => openModal(therapy)}
-                      className="flex-1 p-2 text-[#57ABB2] hover:bg-[#57ABB2]/10 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 text-sm"
-                      disabled={!therapy.ID}
-                      title={!therapy.ID ? 'Cannot edit: Invalid ID' : ''}
-                    >
-                      <FaEdit />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(therapy.ID, therapy.Name)}
-                      className="flex-1 p-2 text-[#AE261B] hover:bg-[#AE261B]/10 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 text-sm"
-                      disabled={!therapy.ID}
-                      title={!therapy.ID ? 'Cannot delete: Invalid ID' : ''}
-                    >
-                      <FaTrash />
-                      Delete
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => handleToggleStatus(therapy.ID, therapy.ActiveStatus)}
+                    className="text-xl cursor-pointer"
+                    disabled={!therapy.ID}
+                  >
+                    {therapy.ActiveStatus && therapy.ActiveStatus.toLowerCase() === 'active' ? (
+                      <FaToggleOn className="text-[#57ABB2]" />
+                    ) : (
+                      <FaToggleOff className="text-gray-400" />
+                    )}
+                  </button>
                 </div>
-              );
-            })
+                <p className="text-sm text-gray-500 mb-3 line-clamp-2">{therapy.Description || 'No description'}</p>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1 text-[#57ABB2] font-semibold">
+                    <FaRupeeSign className="text-sm" />
+                    <span>{therapy.Price}</span>
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(therapy.ActiveStatus)}`}>
+                    {therapy.ActiveStatus || 'Inactive'}
+                  </span>
+                </div>
+                <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2">
+                  <button
+                    onClick={() => openModal(therapy)}
+                    className="flex-1 p-2 text-[#57ABB2] hover:bg-[#57ABB2]/10 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 text-sm"
+                    disabled={!therapy.ID}
+                  >
+                    <FaEdit />
+                    Edit
+                  </button>
+                  {/* <button
+                    onClick={() => handleDelete(therapy.ID, therapy.Name)}
+                    className="flex-1 p-2 text-[#AE261B] hover:bg-[#AE261B]/10 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 text-sm"
+                    disabled={!therapy.ID}
+                  >
+                    <FaTrash />
+                    Delete
+                  </button> */}
+                </div>
+              </div>
+            ))
           )}
         </div>
       )}
 
-      {/* Modal */}
+      {/* Modal with Animation */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closeModal}></div>
+          <div className="relative bg-white rounded-3xl max-w-md w-full modal-content">
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-bold text-gray-800">

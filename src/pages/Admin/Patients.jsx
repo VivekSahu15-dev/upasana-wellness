@@ -188,14 +188,12 @@ const Patients = () => {
       setPatients(data);
       setFilteredPatients(data);
     } catch (error) {
-      console.error('Error loading patients:', error);
       toast.error('Failed to load patients');
     } finally {
       setLoading(false);
     }
   }, [patientCache]);
 
-  // Search patients by name
   const searchPatients = useCallback(async (term) => {
     if (!term || term.trim() === '') {
       setFilteredPatients(patients);
@@ -207,12 +205,11 @@ const Patients = () => {
     
     setSearchLoading(true);
     try {
-      // Search by Name field (as per the search API)
       const response = await axiosInstance.post(
         `/api/PatientsMasterAPI/Search/${userId}`,
         {
           ID: null,
-          Name: term.trim(), // Search by name
+          Name: term.trim(),
           DOB: null,
           Contact: null,
           Address: null,
@@ -251,8 +248,6 @@ const Patients = () => {
       
       setFilteredPatients(data);
     } catch (error) {
-      console.error('Error searching patients:', error);
-      // Fallback to client-side filtering by name
       const filtered = patients.filter(patient =>
         patient.Name?.toLowerCase().includes(term.toLowerCase())
       );
@@ -262,7 +257,6 @@ const Patients = () => {
     }
   }, [patientCache, patients]);
 
-  // Handle search input with debounce
   const handleSearchInput = (e) => {
     const value = e.target.value;
     setSearchTerm(value);
@@ -384,7 +378,6 @@ const Patients = () => {
         toast.error(response.data?.message || 'Operation failed');
       }
     } catch (error) {
-      console.error('Error saving patient:', error);
       toast.error(error.response?.data?.message || 'Operation failed. Please try again.');
     } finally {
       setIsSubmitting(false);
@@ -454,7 +447,6 @@ const Patients = () => {
         toast.error(response.data?.message || 'Failed to delete patient');
       }
     } catch (error) {
-      console.error('Error deleting patient:', error);
       toast.error(error.response?.data?.message || 'Failed to delete patient');
     }
   };
@@ -501,7 +493,6 @@ const Patients = () => {
         toast.error(response.data?.message || 'Failed to update status');
       }
     } catch (error) {
-      console.error('Error updating status:', error);
       toast.error(error.response?.data?.message || 'Failed to update status');
     }
   };
@@ -703,14 +694,14 @@ const Patients = () => {
                           >
                             <FaEdit />
                           </button>
-                          <button
+                          {/* <button
                             onClick={() => handleDelete(patient.ID, patient.Name)}
                             className="p-2 text-[#AE261B] hover:bg-[#AE261B]/10 rounded-lg transition-colors cursor-pointer"
                             title="Delete"
                             disabled={!patient.ID}
                           >
                             <FaTrash />
-                          </button>
+                          </button> */}
                         </div>
                       </td>
                     </tr>
@@ -722,11 +713,12 @@ const Patients = () => {
         </div>
       )}
 
-      {/* Modal */}
+      {/* Modal with Animation */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex justify-between items-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closeModal}></div>
+          <div className="relative bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto modal-content">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex justify-between items-center z-10">
               <div>
                 <h3 className="text-xl font-bold text-gray-800">
                   {isEditMode ? 'Edit Patient' : 'Add New Patient'}
