@@ -1,21 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
-import { 
-  FaUsers, 
-  FaClipboardList, 
-  FaCreditCard, 
+import {
+  FaUsers,
+  FaClipboardList,
+  FaCreditCard,
   FaBox,
   FaSignOutAlt,
   FaUserShield,
   FaHome,
   FaBars,
   FaTimes,
-  FaSpinner
+  FaSpinner, FaStethoscope
 } from 'react-icons/fa';
 import Patients from './Patients';
 import Therapies from './Therapies';
 import PaymentModes from './PaymentModes';
 import Packages from './Packages';
+import Diagnosis from './Diagnosis';
 import { toast } from 'react-toastify';
 import axiosInstance from '../../utils/axiosConfig';
 
@@ -40,12 +41,12 @@ const AdminDashboard = () => {
   useEffect(() => {
     const token = localStorage.getItem('upasanaToken');
     const userData = localStorage.getItem('upasanaUser');
-    
+
     if (!token || !userData) {
       navigate('/admin', { replace: true });
       return;
     }
-    
+
     try {
       const parsedUser = JSON.parse(userData);
       if (parsedUser.role !== 'admin') {
@@ -59,7 +60,7 @@ const AdminDashboard = () => {
       navigate('/admin', { replace: true });
       return;
     }
-    
+
     setIsLoading(false);
   }, [navigate]);
 
@@ -83,7 +84,7 @@ const AdminDashboard = () => {
           ActiveStatus: null
         }
       );
-      
+
       let patientsData = [];
       if (patientsRes.data) {
         if (Array.isArray(patientsRes.data)) {
@@ -104,7 +105,7 @@ const AdminDashboard = () => {
           ActiveStatus: null
         }
       );
-      
+
       let therapiesData = [];
       if (therapiesRes.data) {
         if (Array.isArray(therapiesRes.data)) {
@@ -123,7 +124,7 @@ const AdminDashboard = () => {
           ActiveStatus: null
         }
       );
-      
+
       let paymentData = [];
       if (paymentRes.data) {
         if (Array.isArray(paymentRes.data)) {
@@ -144,7 +145,7 @@ const AdminDashboard = () => {
           ActiveStatus: null
         }
       );
-      
+
       let packagesData = [];
       if (packagesRes.data) {
         if (Array.isArray(packagesRes.data)) {
@@ -186,6 +187,8 @@ const AdminDashboard = () => {
     { path: '/admin/dashboard/patients', icon: <FaUsers />, label: 'Patients' },
     { path: '/admin/dashboard/therapies', icon: <FaClipboardList />, label: 'Therapies' },
     { path: '/admin/dashboard/payments', icon: <FaCreditCard />, label: 'Payment Modes' },
+    { path: '/admin/dashboard/diagnosis', icon: <FaStethoscope />, label: 'Diagnosis' }, // Add this
+
     // { path: '/admin/dashboard/packages', icon: <FaBox />, label: 'Packages' },
   ];
 
@@ -226,7 +229,7 @@ const AdminDashboard = () => {
       `}>
         <div className="p-6 border-b border-gray-100">
           <div className="items-center gap-3">
-              <img src="/logo.png" alt="Upasana Wellness Logo" className="w-32 h-auto" />
+            <img src="/logo.png" alt="Upasana Wellness Logo" className="w-32 h-auto" />
             <div>
               <h2 className="font-bold text-gray-800 text-lg">Admin Panel</h2>
               <p className="text-xs text-gray-400">Upasana Wellness</p>
@@ -242,8 +245,8 @@ const AdminDashboard = () => {
               onClick={() => setSidebarOpen(false)}
               className={`
                 flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300
-                ${isActive(item.path) 
-                  ? 'bg-gradient-to-r from-[#57ABB2]/10 to-[#DE9A0E]/10 text-[#57ABB2] font-semibold' 
+                ${isActive(item.path)
+                  ? 'bg-gradient-to-r from-[#57ABB2]/10 to-[#DE9A0E]/10 text-[#57ABB2] font-semibold'
                   : 'text-gray-600 hover:bg-gray-50 hover:text-[#57ABB2]'
                 }
               `}
@@ -287,14 +290,14 @@ const AdminDashboard = () => {
             <Route path="patients" element={<Patients />} />
             <Route path="therapies" element={<Therapies />} />
             <Route path="payments" element={<PaymentModes />} />
-            <Route path="packages" element={<Packages />} />
+            <Route path="diagnosis" element={<Diagnosis />} />
             <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
           </Routes>
         </div>
       </div>
 
       {sidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/20 z-30 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
@@ -327,11 +330,11 @@ const AdminOverview = ({ stats }) => {
               {stat.value}
             </p>
             <div className="mt-3 h-1 w-full bg-gray-100 rounded-full overflow-hidden">
-              <div 
+              <div
                 className="h-full rounded-full"
-                style={{ 
-                  width: `${Math.min(stat.value * 10, 100)}%`, 
-                  backgroundColor: stat.color 
+                style={{
+                  width: `${Math.min(stat.value * 10, 100)}%`,
+                  backgroundColor: stat.color
                 }}
               ></div>
             </div>
@@ -349,7 +352,7 @@ const AdminOverview = ({ stats }) => {
             <span className="px-3 py-1 bg-white rounded-full text-xs text-[#E39D17] shadow-sm">Payment Mode</span>
           </div>
         </div>
-    
+
       </div>
     </div>
   );

@@ -172,14 +172,32 @@ const Patients = () => {
         const patientId = item.ID || item.id || null;
         const cached = patientCache[patientId] || {};
         
+        // Extract country ID from _state._country
+        const countryId = item._state?._country?.ID || 
+                         item._state?._country?.id || 
+                         item.CountryID || 
+                         item.countryID || 
+                         cached.CountryID || 
+                         null;
+        
+        // Extract state ID from _state
+        const stateId = item._state?.ID || 
+                       item._state?.id || 
+                       item.StateID || 
+                       item.stateID || 
+                       cached.StateID || 
+                       null;
+        
         return {
           ID: patientId,
           Name: item.Name || item.name || 'Unnamed',
           DOB: item.DOB || item.dob || '',
           Contact: item.Contact || item.contact || '',
           Address: item.Address || item.address || '',
-          CountryID: item.CountryID || item.countryID || item.countryId || cached.CountryID || null,
-          StateID: item.StateID || item.stateID || item.stateId || cached.StateID || null,
+          CountryID: countryId,
+          StateID: stateId,
+          CountryName: item._state?._country?.Name || item._state?._country?.name || '',
+          StateName: item._state?.Name || item._state?.name || '',
           Gender: item.Gender || item.gender || 'Male',
           ActiveStatus: item.ActiveStatus || item.activeStatus || item.status || 'Inactive'
         };
@@ -233,14 +251,30 @@ const Patients = () => {
         const patientId = item.ID || item.id || null;
         const cached = patientCache[patientId] || {};
         
+        const countryId = item._state?._country?.ID || 
+                         item._state?._country?.id || 
+                         item.CountryID || 
+                         item.countryID || 
+                         cached.CountryID || 
+                         null;
+        
+        const stateId = item._state?.ID || 
+                       item._state?.id || 
+                       item.StateID || 
+                       item.stateID || 
+                       cached.StateID || 
+                       null;
+        
         return {
           ID: patientId,
           Name: item.Name || item.name || 'Unnamed',
           DOB: item.DOB || item.dob || '',
           Contact: item.Contact || item.contact || '',
           Address: item.Address || item.address || '',
-          CountryID: item.CountryID || item.countryID || cached.CountryID || null,
-          StateID: item.StateID || item.stateID || cached.StateID || null,
+          CountryID: countryId,
+          StateID: stateId,
+          CountryName: item._state?._country?.Name || item._state?._country?.name || '',
+          StateName: item._state?.Name || item._state?.name || '',
           Gender: item.Gender || item.gender || 'Male',
           ActiveStatus: item.ActiveStatus || item.activeStatus || item.status || 'Inactive'
         };
@@ -568,6 +602,15 @@ const Patients = () => {
     return country ? country.Name : 'N/A';
   };
 
+  const getCountryNameFromState = (patient) => {
+    // First check if we have CountryName directly from the patient
+    if (patient.CountryName) {
+      return patient.CountryName;
+    }
+    // Fallback to looking up by CountryID
+    return getCountryName(patient.CountryID);
+  };
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
@@ -647,7 +690,7 @@ const Patients = () => {
                 </tr>
               ) : (
                 filteredPatients.map((patient) => {
-                  const countryName = getCountryName(patient.CountryID);
+                  const countryName = getCountryNameFromState(patient);
                   return (
                     <tr key={patient.ID} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3">
