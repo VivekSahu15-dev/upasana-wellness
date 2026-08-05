@@ -15,10 +15,8 @@ import {
   FaExclamationTriangle,
   FaCheckCircle,
   FaUserCog,
-  FaFileInvoice,
-  FaCalendarAlt,
-  FaClock,
-  FaPrint
+  FaSun,
+  FaMoon
 } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import axiosInstance from '../../utils/axiosConfig';
@@ -65,8 +63,8 @@ const Diagnosis = () => {
   const [therapyFormData, setTherapyFormData] = useState({
     TherapyID: null,
     TherapyName: '',
-    Time1: '',
-    Time2: '',
+    Time1: '', // Morning time
+    Time2: '', // Evening time
     Price: 0,
     TotalAmount: 0,
     DiscountAmount: 0,
@@ -77,7 +75,6 @@ const Diagnosis = () => {
   const patientSearchTimeout = useRef(null);
   const therapySearchTimeout = useRef(null);
 
-  // Get Admin User ID (for authentication and URL)
   const getAdminUserId = () => {
     const userId = localStorage.getItem('upasanaUserID');
     if (!userId) {
@@ -87,7 +84,6 @@ const Diagnosis = () => {
     return userId;
   };
 
-  // Get Admin User Data
   const getAdminUser = () => {
     const userData = localStorage.getItem('upasanaUser');
     if (!userData) return null;
@@ -98,7 +94,6 @@ const Diagnosis = () => {
     }
   };
 
-  // Load diagnoses using Search/Summary endpoint
   const loadDiagnoses = useCallback(async () => {
     if (!isMounted.current) return;
     
@@ -107,8 +102,7 @@ const Diagnosis = () => {
     
     setLoading(true);
     try {
-      // Using the Search/Summary endpoint
-      const format = 'json'; // Can be any string for now
+      const format = 'json';
       const response = await axiosInstance.post(
         `/api/DiagnosisAPI/Search/Summary/${format}/${adminId}`,
         {
@@ -119,8 +113,6 @@ const Diagnosis = () => {
           PatientID: null
         }
       );
-      
-      console.log('Diagnoses response:', response.data);
       
       let data = [];
       if (response.data) {
@@ -141,7 +133,6 @@ const Diagnosis = () => {
     }
   }, []);
 
-  // Load patients for dropdown
   const loadPatients = useCallback(async (search = '') => {
     const adminId = getAdminUserId();
     if (!adminId) return;
@@ -178,7 +169,6 @@ const Diagnosis = () => {
     }
   }, []);
 
-  // Load therapies for dropdown
   const loadTherapies = useCallback(async (search = '') => {
     const adminId = getAdminUserId();
     if (!adminId) return;
@@ -222,7 +212,6 @@ const Diagnosis = () => {
     };
   }, [loadDiagnoses, loadPatients, loadTherapies]);
 
-  // Search diagnoses with filters
   const searchDiagnoses = useCallback(async (term) => {
     if (!term || term.trim() === '') {
       setFilteredDiagnoses(diagnoses);
@@ -234,7 +223,6 @@ const Diagnosis = () => {
     
     setSearchLoading(true);
     try {
-      // Search by patient name - we'll use the Search/Summary endpoint
       const format = 'json';
       const response = await axiosInstance.post(
         `/api/DiagnosisAPI/Search/Summary/${format}/${adminId}`,
@@ -256,7 +244,6 @@ const Diagnosis = () => {
         }
       }
       
-      // Client-side filtering
       const filtered = data.filter(item => 
         item._patientVar?.Name?.toLowerCase().includes(term.toLowerCase()) ||
         item._summaryVar?.Problems?.toLowerCase().includes(term.toLowerCase())
@@ -265,7 +252,6 @@ const Diagnosis = () => {
       setFilteredDiagnoses(filtered);
     } catch (error) {
       console.error('Error searching diagnoses:', error);
-      // Fallback to client-side filtering
       const filtered = diagnoses.filter(item =>
         item._patientVar?.Name?.toLowerCase().includes(term.toLowerCase())
       );
@@ -288,7 +274,6 @@ const Diagnosis = () => {
     }, 500);
   };
 
-  // Patient search for dropdown
   const handlePatientSearch = (e) => {
     const value = e.target.value;
     setPatientSearchTerm(value);
@@ -303,7 +288,6 @@ const Diagnosis = () => {
     }, 300);
   };
 
-  // Therapy search for dropdown
   const handleTherapySearch = (e) => {
     const value = e.target.value;
     setTherapySearchTerm(value);
@@ -318,7 +302,6 @@ const Diagnosis = () => {
     }, 300);
   };
 
-  // Select patient
   const selectPatient = (patient) => {
     setSelectedPatient(patient);
     setFormData(prev => ({
@@ -332,7 +315,6 @@ const Diagnosis = () => {
     setShowPatientDropdown(false);
   };
 
-  // Select therapy for adding
   const selectTherapy = (therapy) => {
     setSelectedTherapy(therapy);
     const therapyId = therapy.ID || therapy.id;
@@ -358,16 +340,8 @@ const Diagnosis = () => {
       return;
     }
     
-    if (!therapyFormData.Time1) {
-      toast.warning('Please select start time');
-      return;
-    }
-    
-    if (!therapyFormData.Time2) {
-      toast.warning('Please select end time');
-      return;
-    }
-    
+    // Time1 and Time2 are optional - both can be null
+    // If both are empty, that's fine
     const price = parseFloat(therapyFormData.Price) || 0;
     const discount = parseFloat(therapyFormData.DiscountAmount) || 0;
     const totalAmount = price;
@@ -376,8 +350,8 @@ const Diagnosis = () => {
     const newTherapy = {
       TherapyID: therapyFormData.TherapyID,
       TherapyName: therapyFormData.TherapyName || selectedTherapy?.Name || '',
-      Time1: therapyFormData.Time1,
-      Time2: therapyFormData.Time2,
+      Time1: therapyFormData.Time1 || null,  // Can be null
+      Time2: therapyFormData.Time2 || null,  // Can be null
       Price: price,
       TotalAmount: totalAmount,
       DiscountAmount: discount,
@@ -389,7 +363,6 @@ const Diagnosis = () => {
       _therapyList: [...prev._therapyList, newTherapy]
     }));
     
-    // Reset therapy form
     setTherapyFormData({
       TherapyID: null,
       TherapyName: '',
@@ -403,11 +376,9 @@ const Diagnosis = () => {
     setSelectedTherapy(null);
     setTherapySearchTerm('');
     
-    // Recalculate totals
     calculateTotals([...formData._therapyList, newTherapy]);
   };
 
-  // Remove therapy from list
   const removeTherapy = (index) => {
     const updatedList = formData._therapyList.filter((_, i) => i !== index);
     setFormData(prev => ({
@@ -417,7 +388,6 @@ const Diagnosis = () => {
     calculateTotals(updatedList);
   };
 
-  // Calculate totals
   const calculateTotals = (therapyList) => {
     let totalTherapyAmount = 0;
     let totalDiscount = 0;
@@ -445,7 +415,6 @@ const Diagnosis = () => {
     }));
   };
 
-  // Update therapy amount on change
   const updateTherapyAmounts = (field, value) => {
     const updatedForm = { ...therapyFormData, [field]: value };
     
@@ -523,7 +492,6 @@ const Diagnosis = () => {
     setIsSubmitting(true);
     
     try {
-      // Build the request body according to the updated PDF
       const requestData = {
         ID: isEditMode ? selectedDiagnosis.ID : null,
         _invoiceVar: {
@@ -543,8 +511,8 @@ const Diagnosis = () => {
           },
           _therapyList: formData._therapyList.map(therapy => ({
             TherapyID: therapy.TherapyID,
-            Time1: therapy.Time1,
-            Time2: therapy.Time2,
+            Time1: therapy.Time1 || null,  // Can be null
+            Time2: therapy.Time2 || null,  // Can be null
             Price: therapy.Price,
             TotalAmount: therapy.TotalAmount,
             DiscountAmount: therapy.DiscountAmount || 0,
@@ -553,19 +521,13 @@ const Diagnosis = () => {
         }
       };
 
-      console.log('Saving diagnosis for patient ID:', patientId);
-      console.log('User ID (admin):', adminId);
-      console.log('Request data:', JSON.stringify(requestData, null, 2));
+      console.log('Saving diagnosis:', JSON.stringify(requestData, null, 2));
 
-      // Using the updated endpoint from PDF: Save/{_userID:long}
       const response = await axiosInstance.post(
         `/api/DiagnosisAPI/Save/${adminId}`,
         requestData
       );
       
-      console.log('Save response:', response.data);
-      
-      // Check if save was successful
       if (response.status === 200 || response.status === 201) {
         toast.success(isEditMode ? 'Diagnosis updated successfully!' : 'Diagnosis created successfully!');
         closeModal();
@@ -575,11 +537,6 @@ const Diagnosis = () => {
       }
     } catch (error) {
       console.error('Error saving diagnosis:', error);
-      
-      if (error.response) {
-        console.error('Error status:', error.response.status);
-        console.error('Error data:', error.response.data);
-      }
       
       let errorMsg = 'Operation failed. Please try again.';
       if (error.response?.data) {
@@ -646,7 +603,6 @@ const Diagnosis = () => {
 
   const performDelete = async (id, adminId) => {
     try {
-      // Use Save endpoint with ActiveStatus: Inactive to delete
       const response = await axiosInstance.post(
         `/api/DiagnosisAPI/Save/${adminId}`,
         {
@@ -760,14 +716,6 @@ const Diagnosis = () => {
     setIsSubmitting(false);
     setShowPatientDropdown(false);
     setShowTherapyDropdown(false);
-  };
-
-  const getStatusBadge = (status) => {
-    if (!status) return 'bg-gray-100 text-gray-700';
-    const statusLower = status.toLowerCase();
-    return statusLower === 'active' 
-      ? 'bg-green-100 text-green-700'
-      : 'bg-gray-100 text-gray-700';
   };
 
   return (
@@ -936,11 +884,11 @@ const Diagnosis = () => {
               <div className="bg-blue-50 rounded-lg p-3 border border-blue-100 flex items-center gap-3">
                 <FaUserCog className="text-[#57ABB2] text-lg" />
                 <div>
-                  <p className="text-sm font-medium text-gray-700">Created By (User ID)</p>
+                  <p className="text-sm font-medium text-gray-700">Created By</p>
                   <p className="text-sm text-gray-600">
                     {getAdminUser()?.name || 'Admin'} (ID: {getAdminUserId() || 'N/A'})
                   </p>
-                  <p className="text-xs text-gray-400">This diagnosis will be recorded with your User ID</p>
+                  <p className="text-xs text-gray-400">This diagnosis will be recorded under your name</p>
                 </div>
               </div>
 
@@ -1043,6 +991,7 @@ const Diagnosis = () => {
                 {/* Add Therapy */}
                 <div className="grid grid-cols-1 md:grid-cols-6 gap-3 mb-3 p-4 bg-gray-50 rounded-lg">
                   <div className="relative md:col-span-2">
+                     <label className="block text-xs text-gray-500 mb-1">Therapy</label>
                     <input
                       type="text"
                       placeholder="Search therapy..."
@@ -1053,6 +1002,7 @@ const Diagnosis = () => {
                     />
                     {showTherapyDropdown && filteredTherapies.length > 0 && (
                       <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-32 overflow-y-auto">
+                        
                         {filteredTherapies.map(therapy => (
                           <button
                             key={therapy.ID || therapy.id}
@@ -1068,26 +1018,35 @@ const Diagnosis = () => {
                     )}
                   </div>
                   <div>
+                    <label className="block text-xs text-gray-500 mb-1">
+                      <FaSun className="inline mr-1 text-yellow-500" />
+                      Morning Time
+                    </label>
                     <input
                       type="time"
                       name="Time1"
                       value={therapyFormData.Time1}
                       onChange={handleTherapyInputChange}
                       className="w-full px-4 py-2 rounded-lg border-2 border-gray-200 focus:border-[#57ABB2] focus:outline-none transition-colors"
-                      placeholder="Start"
+                      placeholder="Morning"
                     />
                   </div>
                   <div>
+                    <label className="block text-xs text-gray-500 mb-1">
+                      <FaMoon className="inline mr-1 text-blue-500" />
+                      Evening Time
+                    </label>
                     <input
                       type="time"
                       name="Time2"
                       value={therapyFormData.Time2}
                       onChange={handleTherapyInputChange}
                       className="w-full px-4 py-2 rounded-lg border-2 border-gray-200 focus:border-[#57ABB2] focus:outline-none transition-colors"
-                      placeholder="End"
+                      placeholder="Evening"
                     />
                   </div>
                   <div>
+                    <label className="block text-xs text-gray-500 mb-1">Discount</label>
                     <input
                       type="number"
                       name="DiscountAmount"
@@ -1095,9 +1054,11 @@ const Diagnosis = () => {
                       onChange={handleTherapyInputChange}
                       placeholder="Discount"
                       className="w-full px-4 py-2 rounded-lg border-2 border-gray-200 focus:border-[#57ABB2] focus:outline-none transition-colors"
+                      step="0.01"
+                      min="0"
                     />
                   </div>
-                  <div>
+                  <div className="flex items-end">
                     <button
                       type="button"
                       onClick={addTherapy}
@@ -1116,7 +1077,8 @@ const Diagnosis = () => {
                       <thead className="bg-gray-50">
                         <tr>
                           <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Therapy</th>
-                          <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Time</th>
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Morning</th>
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Evening</th>
                           <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Price</th>
                           <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Discount</th>
                           <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Net</th>
@@ -1129,7 +1091,8 @@ const Diagnosis = () => {
                             <td className="px-3 py-2 text-sm">
                               {therapy.TherapyName || 'Unnamed'}
                             </td>
-                            <td className="px-3 py-2 text-sm">{therapy.Time1} - {therapy.Time2}</td>
+                            <td className="px-3 py-2 text-sm">{therapy.Time1 || '-'}</td>
+                            <td className="px-3 py-2 text-sm">{therapy.Time2 || '-'}</td>
                             <td className="px-3 py-2 text-sm text-right">₹{therapy.Price}</td>
                             <td className="px-3 py-2 text-sm text-right">₹{therapy.DiscountAmount || 0}</td>
                             <td className="px-3 py-2 text-sm text-right font-medium text-[#57ABB2]">₹{therapy.NetAmount || therapy.Price}</td>
@@ -1147,7 +1110,7 @@ const Diagnosis = () => {
                       </tbody>
                       <tfoot className="bg-gray-50 border-t">
                         <tr>
-                          <td colSpan="2" className="px-3 py-2 text-right font-medium">Totals:</td>
+                          <td colSpan="3" className="px-3 py-2 text-right font-medium">Totals:</td>
                           <td className="px-3 py-2 text-right font-medium">₹{formData._summaryVar.TotalTherapyAmount}</td>
                           <td className="px-3 py-2 text-right font-medium">₹{formData._summaryVar.TherapyDiscount}</td>
                           <td className="px-3 py-2 text-right font-medium text-[#57ABB2]">₹{formData._summaryVar.NetTherapyAmount}</td>
