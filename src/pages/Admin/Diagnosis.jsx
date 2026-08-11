@@ -8,7 +8,6 @@ import {
   FaSave,
   FaSpinner,
   FaUser,
-  FaStethoscope,
   FaRupeeSign,
   FaPlusCircle,
   FaMinusCircle,
@@ -130,9 +129,23 @@ const Diagnosis = () => {
     if (!isoString) return '-';
     try {
       const date = new Date(isoString);
+      if (isNaN(date.getTime())) return '-';
       return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
     } catch {
       return '-';
+    }
+  };
+
+  // Safely turn any date-ish value into a yyyy-MM-dd string for <input type="date">.
+  // Guards against literal "null"/"undefined" strings and invalid dates.
+  const toDateInputValue = (value) => {
+    if (!value || value === 'null' || value === 'undefined') return '';
+    try {
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return '';
+      return d.toISOString().split('T')[0];
+    } catch {
+      return '';
     }
   };
 
@@ -173,7 +186,7 @@ const Diagnosis = () => {
         
         return {
           ID: item.ID || item.id || null,
-          Date: item.Date || item.date || '',
+          Date: item.Date || item.date || null,
           _summaryVar: {
             PatientID: summary.PatientID || summary.patientId || null,
             Problems: summary.Problems || summary.problems || '',
@@ -207,28 +220,20 @@ const Diagnosis = () => {
     }
   }, []);
 
-  // Fetch full invoice details for editing - using the correct endpoint
-  const fetchInvoiceDetails = useCallback(async (diagnosisId, adminId) => {
+  // Fetch full invoice details for editing.
+  // `date` must be a real YYYY-MM-DD string — never the literal word "null",
+  // which was previously being sent straight into the URL.
+  const fetchInvoiceDetails = useCallback(async (date, diagnosisId, adminId) => {
     try {
-      // Try different date formats
       const format = 'json';
-      
-      // Try with empty date
-      let url = `/api/DiagnosisAPI/Search/Invoice/${format}//${diagnosisId}/${adminId}`;
+
+      const dateParam = date || new Date().toISOString().split('T')[0];
+
+      const url = `/api/DiagnosisAPI/Search/Invoice/${format}/${dateParam}/${diagnosisId}/${adminId}`;
       console.log('Trying URL:', url);
+
+      const response = await axiosInstance.get(url);
       
-      let response = await axiosInstance.get(url);
-      
-      // If that fails, try with null
-      if (!response.data || typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
-        url = `/api/DiagnosisAPI/Search/Invoice/${format}/null/${diagnosisId}/${adminId}`;
-        console.log('Trying URL:', url);
-        response = await axiosInstance.get(url);
-      }
-      
-      console.log('Response status:', response.status);
-      
-      // If response is HTML, it's an error
       if (typeof response.data === 'string' && response.data.trim().startsWith('<!DOCTYPE')) {
         console.error('Received HTML instead of JSON');
         return null;
@@ -250,9 +255,10 @@ const Diagnosis = () => {
     }
   }, []);
 
+  // Returns the loaded array (not just sets state) so callers can use fresh data immediately
   const loadPatients = useCallback(async (search = '') => {
     const adminId = getAdminUserId();
-    if (!adminId) return;
+    if (!adminId) return [];
     
     try {
       const response = await axiosInstance.post(
@@ -281,14 +287,17 @@ const Diagnosis = () => {
       
       setPatients(data);
       setFilteredPatients(data);
+      return data;
     } catch (error) {
       console.error('Error loading patients:', error);
+      return [];
     }
   }, []);
 
+  // Returns the loaded array (not just sets state) so callers can use fresh data immediately
   const loadTherapies = useCallback(async (search = '') => {
     const adminId = getAdminUserId();
-    if (!adminId) return;
+    if (!adminId) return [];
     
     try {
       const response = await axiosInstance.post(
@@ -313,8 +322,10 @@ const Diagnosis = () => {
       
       setTherapies(data);
       setFilteredTherapies(data);
+      return data;
     } catch (error) {
       console.error('Error loading therapies:', error);
+      return [];
     }
   }, []);
 
@@ -367,7 +378,7 @@ const Diagnosis = () => {
         
         return {
           ID: item.ID || item.id || null,
-          Date: item.Date || item.date || '',
+          Date: item.Date || item.date || null,
           _summaryVar: {
             PatientID: summary.PatientID || summary.patientId || null,
             Problems: summary.Problems || summary.problems || '',
@@ -492,7 +503,10 @@ const Diagnosis = () => {
     const time1 = therapyFormData.time1 ? formatTimeToISO(therapyFormData.time1, diagnosisDate) : null;
     const time2 = therapyFormData.time2 ? formatTimeToISO(therapyFormData.time2, diagnosisDate) : null;
     
+    // NOTE: `id` is intentionally omitted here — this is a brand-new therapy line,
+    // it has no existing detail-row id from the backend yet.
     const newTherapy = {
+      id: null,
       therapyID: therapyFormData.TherapyID,
       TherapyName: therapyFormData.TherapyName || selectedTherapy?.Name || '',
       time1: time1,
@@ -501,9 +515,11 @@ const Diagnosis = () => {
       discountAmount: discount
     };
     
+    const updatedList = [...formData._therapyList, newTherapy];
+    
     setFormData(prev => ({
       ...prev,
-      _therapyList: [...prev._therapyList, newTherapy]
+      _therapyList: updatedList
     }));
     
     setTherapyFormData({
@@ -517,7 +533,7 @@ const Diagnosis = () => {
     setSelectedTherapy(null);
     setTherapySearchTerm('');
     
-    calculateTotals([...formData._therapyList, newTherapy]);
+    calculateTotals(updatedList);
   };
 
   const removeTherapy = (index) => {
@@ -625,19 +641,31 @@ const Diagnosis = () => {
       return;
     }
 
+    // Guard: edit mode with a missing ID would silently turn an update into a create.
+    if (isEditMode && !selectedDiagnosis?.ID) {
+      console.error('Edit mode is active but selectedDiagnosis.ID is missing:', selectedDiagnosis);
+      toast.error('Could not identify the record being edited. Please close and reopen it.');
+      return;
+    }
+
     setIsSubmitting(true);
     
     try {
       const requestData = {
         ID: isEditMode ? selectedDiagnosis.ID : null,
-        Date: formData.Date || null,
+        Date: formData.Date ? formData.Date : null,
         _summaryVar: {
           PatientID: patientId,
           Problems: formData._summaryVar.Problems,
           Advice: formData._summaryVar.Advice || '',
           Precautions: formData._summaryVar.Precautions || ''
         },
+        // Preserve each therapy line's own detail-row `id` when it exists so the
+        // backend updates that row instead of inserting a duplicate. New lines
+        // (added during this edit) have id === null, which the backend should
+        // treat as "insert".
         _therapyList: formData._therapyList.map(therapy => ({
+          id: therapy.id || null,
           therapyID: therapy.therapyID || therapy.TherapyID,
           time1: therapy.time1 || null,
           time2: therapy.time2 || null,
@@ -754,9 +782,12 @@ const Diagnosis = () => {
     if (diagnosis) {
       setIsEditMode(true);
       setSelectedDiagnosis(diagnosis);
-      
-      console.log('=== EDITING DIAGNOSIS ID:', diagnosis.ID);
-      console.log('Diagnosis from list:', diagnosis);
+
+      if (!diagnosis.ID) {
+        console.error('Diagnosis row is missing an ID — cannot edit safely:', diagnosis);
+        toast.error('This record is missing an ID and cannot be edited.');
+        return;
+      }
       
       const adminId = getAdminUserId();
       if (!adminId) {
@@ -765,63 +796,70 @@ const Diagnosis = () => {
         return;
       }
       
-      // Try to fetch full invoice details
-      const invoiceData = await fetchInvoiceDetails(diagnosis.ID, adminId);
+      // Make sure we have fresh, complete master lists to resolve names against —
+      // don't trust closure state, which may still be empty on first load or
+      // stale after a filtered search.
+      const [patientsData, therapiesData] = await Promise.all([
+        loadPatients(),
+        loadTherapies()
+      ]);
+      
+      // The invoice lookup needs the diagnosis's own date as YYYY-MM-DD —
+      // fall back to today's date only if the list row has none.
+      const dateForLookup = diagnosis.Date
+        ? new Date(diagnosis.Date).toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0];
+
+      const invoiceData = await fetchInvoiceDetails(dateForLookup, diagnosis.ID, adminId);
       
       let summary = {};
       let therapyList = [];
       let patient = {};
-      let dateValue = '';
+      let rawDate = null;
       
-      if (invoiceData && typeof invoiceData === 'object' && !invoiceData.includes) {
-        console.log('Using invoice data for edit');
-        summary = invoiceData._summaryVar || invoiceData._summaryVar || {};
-        therapyList = invoiceData._therapyList || invoiceData._therapyList || [];
-        patient = invoiceData._patientVar || invoiceData._patientVar || {};
-        dateValue = invoiceData.Date || invoiceData.date || '';
+      if (invoiceData && typeof invoiceData === 'object') {
+        summary = invoiceData._summaryVar || {};
+        therapyList = invoiceData._therapyList || [];
+        patient = invoiceData._patientVar || {};
+        rawDate = invoiceData.Date || invoiceData.date || null;
       } else {
-        console.log('Using list data for edit (invoice fetch failed)');
+        console.warn('Invoice fetch failed, falling back to list-row data (therapy list may be incomplete)');
         summary = diagnosis._summaryVar || {};
         therapyList = diagnosis._therapyList || [];
         patient = diagnosis._patientVar || {};
-        dateValue = diagnosis.Date || '';
+        rawDate = diagnosis.Date || null;
       }
       
-      console.log('Summary:', summary);
-      console.log('Raw therapy list:', therapyList);
-      console.log('Patient:', patient);
+      // The diagnosis-level Date field isn't always populated by the invoice
+      // endpoint — fall back to the first therapy line's own date if needed.
+      if (!rawDate || rawDate === 'null') {
+        const firstTherapyWithDate = therapyList.find(t => t.date || t.Date);
+        rawDate = firstTherapyWithDate ? (firstTherapyWithDate.date || firstTherapyWithDate.Date) : null;
+      }
+      const dateValue = toDateInputValue(rawDate);
       
-      // Set the patient
+      // Resolve patient name against the freshly loaded master list, and
+      // actually use the result (previously computed but discarded).
+      let resolvedPatientName = 'Unknown';
       if (summary.PatientID) {
-        const foundPatient = patients.find(p => (p.ID || p.id) === summary.PatientID);
-        setSelectedPatient(foundPatient || {
-          ID: summary.PatientID,
-          Name: patient.Name || 'Unknown'
-        });
-        setPatientSearchTerm(patient.Name || '');
+        const foundPatient = patientsData.find(p => String(p.ID ?? p.id) === String(summary.PatientID));
+        resolvedPatientName =
+          foundPatient?.Name || foundPatient?.name ||
+          patient.Name || patient.name ||
+          'Unknown';
+        setSelectedPatient(foundPatient || { ID: summary.PatientID, Name: resolvedPatientName });
+        setPatientSearchTerm(resolvedPatientName);
       }
       
-      // Format date for input
-      if (dateValue) {
-        try {
-          const d = new Date(dateValue);
-          dateValue = d.toISOString().split('T')[0];
-        } catch {
-          dateValue = '';
-        }
-      }
-      
-      // IMPORTANT: Format therapies - handle the actual data structure from backend
-      const formattedTherapyList = therapyList.map((t, index) => {
-        // Try to get therapy name from various places
-        let therapyName = 'Unnamed';
+      // Format therapies against the freshly loaded therapy master list, and
+      // preserve each line's own detail-row `id` so submit can update it
+      // instead of creating a duplicate.
+      const formattedTherapyList = therapyList.map((t) => {
+        let therapyName = '';
         
-        // Check if _therapy exists and has Name
-        if (t._therapy && t._therapy.Name) {
-          therapyName = t._therapy.Name;
-        } 
-        // Check direct properties
-        else if (t.TherapyName) {
+        if (t._therapy && (t._therapy.Name || t._therapy.name)) {
+          therapyName = t._therapy.Name || t._therapy.name;
+        } else if (t.TherapyName) {
           therapyName = t.TherapyName;
         } else if (t.therapyName) {
           therapyName = t.therapyName;
@@ -830,45 +868,34 @@ const Diagnosis = () => {
         } else if (t.name) {
           therapyName = t.name;
         }
-        // If still unnamed, try to find by therapyID from the therapies list
-        else {
-          const therapyId = t.therapyID || t.TherapyID || t.id;
-          if (therapyId) {
-            const foundTherapy = therapies.find(th => (th.ID || th.id) === therapyId);
-            if (foundTherapy) {
-              therapyName = foundTherapy.Name || foundTherapy.name || 'Unnamed';
-            }
-          }
-        }
         
-        // Get time values
-        let time1Display = '';
-        let time2Display = '';
+        const therapyId = t.therapyID ?? t.TherapyID ?? null;
+        
+        if (!therapyName && therapyId != null) {
+          const foundTherapy = therapiesData.find(th => String(th.ID ?? th.id) === String(therapyId));
+          therapyName = foundTherapy?.Name || foundTherapy?.name || '';
+        }
+        if (!therapyName) therapyName = 'Unnamed';
         
         const time1Val = t.time1 || t.Time1 || null;
         const time2Val = t.time2 || t.Time2 || null;
         
-        if (time1Val) {
-          time1Display = extractTimeFromISO(time1Val) || time1Val;
-        }
-        if (time2Val) {
-          time2Display = extractTimeFromISO(time2Val) || time2Val;
-        }
-        
         return {
-          therapyID: t.therapyID || t.TherapyID || t.id || null,
+          // This is the detail row's own primary key — distinct from therapyID
+          // (the master therapy it points to). Sending this back on submit is
+          // what lets the backend update the row instead of inserting a new one.
+          id: t.id ?? t.ID ?? null,
+          therapyID: therapyId,
           TherapyName: therapyName,
-          time1: time1Display,
-          time2: time2Display,
-          price: t.price || t.Price || 0,
-          discountAmount: t.discountAmount || t.DiscountAmount || 0
+          time1: time1Val ? (extractTimeFromISO(time1Val) || time1Val) : '',
+          time2: time2Val ? (extractTimeFromISO(time2Val) || time2Val) : '',
+          price: t.price ?? t.Price ?? 0,
+          discountAmount: t.discountAmount ?? t.DiscountAmount ?? 0
         };
       });
       
-      console.log('Formatted therapy list:', formattedTherapyList);
-      
       setFormData({
-        ID: diagnosis.ID || null,
+        ID: diagnosis.ID,
         Date: dateValue,
         _summaryVar: {
           PatientID: summary.PatientID || summary.patientId || null,
@@ -1341,7 +1368,7 @@ const Diagnosis = () => {
                           const time2Display = therapy.time2 ? formatTimeDisplay(therapy.time2) : '-';
                           
                           return (
-                            <tr key={index}>
+                            <tr key={therapy.id ?? `new-${index}`}>
                               <td className="px-3 py-2 text-sm">{therapy.TherapyName || 'Unnamed'}</td>
                               <td className="px-3 py-2 text-sm">{time1Display}</td>
                               <td className="px-3 py-2 text-sm">{time2Display}</td>
