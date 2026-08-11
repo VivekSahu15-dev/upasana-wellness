@@ -28,7 +28,7 @@ const AdminLogin = () => {
 
   const loginSchema = yup.object().shape({
     username: yup.string().required('Username is required'),
-    password: yup.string().min(4, 'Password must be at least 4 characters').required('Password is required'),
+    password: yup.string().required('Password is required'),
   });
 
   const { 

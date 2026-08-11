@@ -16,7 +16,8 @@ import {
   FaCheckCircle,
   FaUserCog,
   FaSun,
-  FaMoon
+  FaMoon,
+  FaCalendarAlt
 } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import axiosInstance from '../../utils/axiosConfig';
@@ -40,6 +41,7 @@ const Diagnosis = () => {
   const [showTherapyDropdown, setShowTherapyDropdown] = useState(false);
   const [formData, setFormData] = useState({
     ID: null,
+    Date: '',
     _summaryVar: {
       PatientID: null,
       Problems: '',
@@ -63,12 +65,10 @@ const Diagnosis = () => {
   const [therapyFormData, setTherapyFormData] = useState({
     TherapyID: null,
     TherapyName: '',
-    Time1: '', // Morning time
-    Time2: '', // Evening time
+    time1: '',
+    time2: '',
     Price: 0,
-    TotalAmount: 0,
-    DiscountAmount: 0,
-    NetAmount: 0
+    DiscountAmount: 0
   });
   const isMounted = useRef(true);
   const searchTimeout = useRef(null);
@@ -91,6 +91,48 @@ const Diagnosis = () => {
       return JSON.parse(userData);
     } catch {
       return null;
+    }
+  };
+
+  // Format time to ISO datetime string with given date
+  const formatTimeToISO = (timeStr, dateStr) => {
+    if (!timeStr) return null;
+    const date = dateStr ? new Date(dateStr) : new Date();
+    const [hours, minutes] = timeStr.split(':');
+    date.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+    return date.toISOString();
+  };
+
+  // Extract time from ISO string for display
+  const extractTimeFromISO = (isoString) => {
+    if (!isoString) return null;
+    try {
+      const date = new Date(isoString);
+      return date.toTimeString().slice(0, 5);
+    } catch {
+      return null;
+    }
+  };
+
+  // Format time for display in table
+  const formatTimeDisplay = (isoString) => {
+    if (!isoString) return '-';
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '-';
+    }
+  };
+
+  // Format date for display
+  const formatDateDisplay = (isoString) => {
+    if (!isoString) return '-';
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch {
+      return '-';
     }
   };
 
@@ -120,16 +162,89 @@ const Diagnosis = () => {
           data = response.data;
         } else if (response.data.data && Array.isArray(response.data.data)) {
           data = response.data.data;
+        } else if (response.data.result && Array.isArray(response.data.result)) {
+          data = response.data.result;
         }
       }
       
-      setDiagnoses(data);
-      setFilteredDiagnoses(data);
+      const normalizedData = data.map(item => {
+        let summary = item._summaryVar || item;
+        let patient = item._patientVar || {};
+        
+        return {
+          ID: item.ID || item.id || null,
+          Date: item.Date || item.date || '',
+          _summaryVar: {
+            PatientID: summary.PatientID || summary.patientId || null,
+            Problems: summary.Problems || summary.problems || '',
+            Advice: summary.Advice || summary.advice || '',
+            Precautions: summary.Precautions || summary.precautions || '',
+            TotalTherapyAmount: summary.TotalTherapyAmount || summary.totalTherapyAmount || 0,
+            TherapyDiscount: summary.TherapyDiscount || summary.therapyDiscount || 0,
+            NetTherapyAmount: summary.NetTherapyAmount || summary.netTherapyAmount || 0,
+            TotalAmount: summary.TotalAmount || summary.totalAmount || 0,
+            DiscountAmount: summary.DiscountAmount || summary.discountAmount || 0,
+            GrandTotal: summary.GrandTotal || summary.grandTotal || 0,
+            RoundOff: summary.RoundOff || summary.roundOff || 0,
+            NetPayableAmount: summary.NetPayableAmount || summary.netPayableAmount || 0
+          },
+          _patientVar: {
+            ID: patient.ID || patient.id || null,
+            Name: patient.Name || patient.name || 'Unknown',
+            Contact: patient.Contact || patient.contact || ''
+          },
+          _therapyList: []
+        };
+      });
+      
+      setDiagnoses(normalizedData);
+      setFilteredDiagnoses(normalizedData);
     } catch (error) {
       console.error('Error loading diagnoses:', error);
       toast.error('Failed to load diagnoses');
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  // Fetch full invoice details for editing
+  const fetchInvoiceDetails = useCallback(async (diagnosisId, adminId) => {
+    try {
+      const format = 'json';
+      // Try with empty string instead of null for date
+      const date = '';
+      const url = `/api/DiagnosisAPI/Get/Search/Invoice/${format}/${date}/${diagnosisId}/${adminId}`;
+      
+      console.log('Fetching invoice from URL:', url);
+      
+      const response = await axiosInstance.get(url);
+      
+      console.log('Response status:', response.status);
+      console.log('Response type:', typeof response.data);
+      
+      // If the response is HTML (starts with <), it's an error
+      if (typeof response.data === 'string' && response.data.trim().startsWith('<!DOCTYPE')) {
+        console.error('Received HTML instead of JSON - endpoint might be wrong');
+        return null;
+      }
+      
+      let invoiceData = response.data;
+      if (response.data.data) {
+        invoiceData = response.data.data;
+      }
+      if (response.data.result) {
+        invoiceData = response.data.result;
+      }
+      
+      console.log('Extracted invoice data:', invoiceData);
+      return invoiceData;
+    } catch (error) {
+      console.error('Error fetching invoice details:', error);
+      if (error.response) {
+        console.error('Status:', error.response.status);
+        console.error('Data:', error.response.data);
+      }
+      return null;
     }
   }, []);
 
@@ -244,7 +359,37 @@ const Diagnosis = () => {
         }
       }
       
-      const filtered = data.filter(item => 
+      const normalizedData = data.map(item => {
+        let summary = item._summaryVar || item;
+        let patient = item._patientVar || {};
+        
+        return {
+          ID: item.ID || item.id || null,
+          Date: item.Date || item.date || '',
+          _summaryVar: {
+            PatientID: summary.PatientID || summary.patientId || null,
+            Problems: summary.Problems || summary.problems || '',
+            Advice: summary.Advice || summary.advice || '',
+            Precautions: summary.Precautions || summary.precautions || '',
+            TotalTherapyAmount: summary.TotalTherapyAmount || summary.totalTherapyAmount || 0,
+            TherapyDiscount: summary.TherapyDiscount || summary.therapyDiscount || 0,
+            NetTherapyAmount: summary.NetTherapyAmount || summary.netTherapyAmount || 0,
+            TotalAmount: summary.TotalAmount || summary.totalAmount || 0,
+            DiscountAmount: summary.DiscountAmount || summary.discountAmount || 0,
+            GrandTotal: summary.GrandTotal || summary.grandTotal || 0,
+            RoundOff: summary.RoundOff || summary.roundOff || 0,
+            NetPayableAmount: summary.NetPayableAmount || summary.netPayableAmount || 0
+          },
+          _patientVar: {
+            ID: patient.ID || patient.id || null,
+            Name: patient.Name || patient.name || 'Unknown',
+            Contact: patient.Contact || patient.contact || ''
+          },
+          _therapyList: []
+        };
+      });
+      
+      const filtered = normalizedData.filter(item => 
         item._patientVar?.Name?.toLowerCase().includes(term.toLowerCase()) ||
         item._summaryVar?.Problems?.toLowerCase().includes(term.toLowerCase())
       );
@@ -325,37 +470,33 @@ const Diagnosis = () => {
       ...prev,
       TherapyID: therapyId,
       TherapyName: therapyName,
-      Price: therapyPrice,
-      TotalAmount: therapyPrice,
-      NetAmount: therapyPrice
+      Price: therapyPrice
     }));
     setTherapySearchTerm(therapyName);
     setShowTherapyDropdown(false);
   };
 
-  // Add therapy to list
   const addTherapy = () => {
     if (!therapyFormData.TherapyID) {
       toast.warning('Please select a therapy');
       return;
     }
     
-    // Time1 and Time2 are optional - both can be null
-    // If both are empty, that's fine
     const price = parseFloat(therapyFormData.Price) || 0;
     const discount = parseFloat(therapyFormData.DiscountAmount) || 0;
-    const totalAmount = price;
-    const netAmount = totalAmount - discount;
+    
+    const diagnosisDate = formData.Date || new Date().toISOString().split('T')[0];
+    
+    const time1 = therapyFormData.time1 ? formatTimeToISO(therapyFormData.time1, diagnosisDate) : null;
+    const time2 = therapyFormData.time2 ? formatTimeToISO(therapyFormData.time2, diagnosisDate) : null;
     
     const newTherapy = {
       TherapyID: therapyFormData.TherapyID,
       TherapyName: therapyFormData.TherapyName || selectedTherapy?.Name || '',
-      Time1: therapyFormData.Time1 || null,  // Can be null
-      Time2: therapyFormData.Time2 || null,  // Can be null
+      time1: time1,
+      time2: time2,
       Price: price,
-      TotalAmount: totalAmount,
-      DiscountAmount: discount,
-      NetAmount: netAmount > 0 ? netAmount : 0
+      DiscountAmount: discount
     };
     
     setFormData(prev => ({
@@ -366,12 +507,10 @@ const Diagnosis = () => {
     setTherapyFormData({
       TherapyID: null,
       TherapyName: '',
-      Time1: '',
-      Time2: '',
+      time1: '',
+      time2: '',
       Price: 0,
-      TotalAmount: 0,
-      DiscountAmount: 0,
-      NetAmount: 0
+      DiscountAmount: 0
     });
     setSelectedTherapy(null);
     setTherapySearchTerm('');
@@ -394,9 +533,11 @@ const Diagnosis = () => {
     let netTherapyAmount = 0;
     
     therapyList.forEach(therapy => {
-      totalTherapyAmount += parseFloat(therapy.TotalAmount) || 0;
-      totalDiscount += parseFloat(therapy.DiscountAmount) || 0;
-      netTherapyAmount += parseFloat(therapy.NetAmount) || 0;
+      const price = parseFloat(therapy.Price) || 0;
+      const discount = parseFloat(therapy.DiscountAmount) || 0;
+      totalTherapyAmount += price;
+      totalDiscount += discount;
+      netTherapyAmount += (price - discount);
     });
     
     setFormData(prev => ({
@@ -415,24 +556,13 @@ const Diagnosis = () => {
     }));
   };
 
-  const updateTherapyAmounts = (field, value) => {
-    const updatedForm = { ...therapyFormData, [field]: value };
-    
-    const price = parseFloat(updatedForm.Price) || 0;
-    const discount = parseFloat(updatedForm.DiscountAmount) || 0;
-    const totalAmount = price;
-    const netAmount = totalAmount - discount;
-    
-    setTherapyFormData({
-      ...updatedForm,
-      TotalAmount: totalAmount,
-      NetAmount: netAmount > 0 ? netAmount : 0
-    });
-  };
-
   const handleTherapyInputChange = (e) => {
     const { name, value } = e.target;
-    updateTherapyAmounts(name, value);
+    setTherapyFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const clearTimeField = (field) => {
+    setTherapyFormData(prev => ({ ...prev, [field]: '' }));
   };
 
   const handleInputChange = (e) => {
@@ -441,13 +571,17 @@ const Diagnosis = () => {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
     
-    setFormData(prev => ({
-      ...prev,
-      _summaryVar: {
-        ...prev._summaryVar,
-        [name]: value
-      }
-    }));
+    if (name === 'Date') {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        _summaryVar: {
+          ...prev._summaryVar,
+          [name]: value
+        }
+      }));
+    }
   };
 
   const validateForm = () => {
@@ -492,41 +626,35 @@ const Diagnosis = () => {
     setIsSubmitting(true);
     
     try {
+      // IMPORTANT: Preserve the ID for updates
       const requestData = {
-        ID: isEditMode ? selectedDiagnosis.ID : null,
-        _invoiceVar: {
-          _summaryVar: {
-            PatientID: patientId,
-            Problems: formData._summaryVar.Problems,
-            Advice: formData._summaryVar.Advice || '',
-            Precautions: formData._summaryVar.Precautions || '',
-            TotalTherapyAmount: formData._summaryVar.TotalTherapyAmount,
-            TherapyDiscount: formData._summaryVar.TherapyDiscount,
-            NetTherapyAmount: formData._summaryVar.NetTherapyAmount,
-            TotalAmount: formData._summaryVar.TotalAmount,
-            DiscountAmount: formData._summaryVar.DiscountAmount,
-            GrandTotal: formData._summaryVar.GrandTotal,
-            RoundOff: formData._summaryVar.RoundOff,
-            NetPayableAmount: formData._summaryVar.NetPayableAmount
-          },
-          _therapyList: formData._therapyList.map(therapy => ({
-            TherapyID: therapy.TherapyID,
-            Time1: therapy.Time1 || null,  // Can be null
-            Time2: therapy.Time2 || null,  // Can be null
-            Price: therapy.Price,
-            TotalAmount: therapy.TotalAmount,
-            DiscountAmount: therapy.DiscountAmount || 0,
-            NetAmount: therapy.NetAmount
-          }))
-        }
+        ID: isEditMode ? selectedDiagnosis.ID : null,  // This is the key!
+        Date: formData.Date || null,
+        _summaryVar: {
+          PatientID: patientId,
+          Problems: formData._summaryVar.Problems,
+          Advice: formData._summaryVar.Advice || '',
+          Precautions: formData._summaryVar.Precautions || ''
+        },
+        _therapyList: formData._therapyList.map(therapy => ({
+          TherapyID: therapy.TherapyID,
+          time1: therapy.time1 || null,
+          time2: therapy.time2 || null,
+          Price: therapy.Price,
+          DiscountAmount: therapy.DiscountAmount || 0
+        }))
       };
 
-      console.log('Saving diagnosis:', JSON.stringify(requestData, null, 2));
+      console.log('Saving diagnosis with ID:', requestData.ID);
+      console.log('Is Edit Mode:', isEditMode);
+      console.log('Request data:', JSON.stringify(requestData, null, 2));
 
       const response = await axiosInstance.post(
         `/api/DiagnosisAPI/Save/${adminId}`,
         requestData
       );
+      
+      console.log('Response:', response.data);
       
       if (response.status === 200 || response.status === 201) {
         toast.success(isEditMode ? 'Diagnosis updated successfully!' : 'Diagnosis created successfully!');
@@ -542,14 +670,14 @@ const Diagnosis = () => {
       if (error.response?.data) {
         if (typeof error.response.data === 'string') {
           if (error.response.data.includes('<!DOCTYPE html>')) {
-            errorMsg = 'Server error occurred. Please check the console for details.';
+            errorMsg = 'Server error occurred. Check console.';
           } else {
             errorMsg = error.response.data;
           }
         } else if (error.response.data.message) {
           errorMsg = error.response.data.message;
-        } else if (error.response.data.error) {
-          errorMsg = error.response.data.error;
+        } else if (error.response.data.title) {
+          errorMsg = error.response.data.title;
         }
       }
       toast.error(errorMsg);
@@ -623,24 +751,104 @@ const Diagnosis = () => {
     }
   };
 
-  const openModal = (diagnosis = null) => {
+  const openModal = async (diagnosis = null) => {
     if (diagnosis) {
       setIsEditMode(true);
       setSelectedDiagnosis(diagnosis);
       
-      const summary = diagnosis._summaryVar || {};
-      const therapyList = diagnosis._therapyList || [];
+      console.log('=== EDITING DIAGNOSIS ID:', diagnosis.ID);
+      console.log('Diagnosis from list:', diagnosis);
       
+      // For edit, we try to fetch invoice details
+      const adminId = getAdminUserId();
+      if (!adminId) {
+        toast.error('Admin user not found');
+        setIsModalOpen(false);
+        return;
+      }
+      
+      let summary = diagnosis._summaryVar || {};
+      let therapyList = [];
+      let patient = diagnosis._patientVar || {};
+      let dateValue = diagnosis.Date || '';
+      
+      // Try to fetch full invoice details
+      const invoiceData = await fetchInvoiceDetails(diagnosis.ID, adminId);
+      
+      if (invoiceData && typeof invoiceData === 'object' && !invoiceData.includes) {
+        console.log('Using invoice data for edit');
+        // Use the invoice data
+        summary = invoiceData._summaryVar || invoiceData._summaryVar || summary;
+        therapyList = invoiceData._therapyList || invoiceData._therapyList || [];
+        patient = invoiceData._patientVar || invoiceData._patientVar || patient;
+        dateValue = invoiceData.Date || invoiceData.date || dateValue;
+      } else {
+        console.log('Using list data for edit (invoice fetch failed)');
+        // Use the list data
+        summary = diagnosis._summaryVar || {};
+        therapyList = diagnosis._therapyList || [];
+        patient = diagnosis._patientVar || {};
+        dateValue = diagnosis.Date || '';
+      }
+      
+      console.log('Summary:', summary);
+      console.log('Therapy list:', therapyList);
+      console.log('Patient:', patient);
+      console.log('Date:', dateValue);
+      
+      // Set the patient
       if (summary.PatientID) {
-        const patient = patients.find(p => (p.ID || p.id) === summary.PatientID);
-        if (patient) {
-          setSelectedPatient(patient);
-          setPatientSearchTerm(patient.Name || '');
+        const foundPatient = patients.find(p => (p.ID || p.id) === summary.PatientID);
+        setSelectedPatient(foundPatient || {
+          ID: summary.PatientID,
+          Name: patient.Name || 'Unknown'
+        });
+        setPatientSearchTerm(patient.Name || '');
+      }
+      
+      // Format date for input
+      if (dateValue) {
+        try {
+          const d = new Date(dateValue);
+          dateValue = d.toISOString().split('T')[0];
+        } catch {
+          dateValue = '';
         }
       }
       
+      // Format therapies
+      const formattedTherapyList = therapyList.map(t => {
+        let therapyName = 'Unnamed';
+        if (t._therapy?.Name) therapyName = t._therapy.Name;
+        else if (t.TherapyName) therapyName = t.TherapyName;
+        else if (t.therapyName) therapyName = t.therapyName;
+        else if (t.Name) therapyName = t.Name;
+        
+        let time1Display = '';
+        let time2Display = '';
+        
+        if (t.time1 || t.Time1) {
+          const timeVal = t.time1 || t.Time1;
+          time1Display = extractTimeFromISO(timeVal) || timeVal;
+        }
+        if (t.time2 || t.Time2) {
+          const timeVal = t.time2 || t.Time2;
+          time2Display = extractTimeFromISO(timeVal) || timeVal;
+        }
+        
+        return {
+          TherapyID: t.TherapyID || t.therapyId || null,
+          TherapyName: therapyName,
+          time1: time1Display,
+          time2: time2Display,
+          Price: t.Price || t.price || 0,
+          DiscountAmount: t.DiscountAmount || t.discountAmount || 0
+        };
+      });
+      
       setFormData({
-        ID: diagnosis.ID || diagnosis.id || null,
+        ID: diagnosis.ID || null,
+        Date: dateValue,
         _summaryVar: {
           PatientID: summary.PatientID || null,
           Problems: summary.Problems || '',
@@ -655,27 +863,21 @@ const Diagnosis = () => {
           RoundOff: summary.RoundOff || 0,
           NetPayableAmount: summary.NetPayableAmount || 0
         },
-        _therapyList: therapyList.map(t => ({
-          TherapyID: t.TherapyID || t.therapyId || null,
-          TherapyName: t._therapy?.Name || t.TherapyName || '',
-          Time1: t.Time1 || t.time1 || '',
-          Time2: t.Time2 || t.time2 || '',
-          Price: t.Price || t.price || 0,
-          TotalAmount: t.TotalAmount || t.totalAmount || 0,
-          DiscountAmount: t.DiscountAmount || t.discountAmount || 0,
-          NetAmount: t.NetAmount || t.netAmount || 0
-        }))
+        _therapyList: formattedTherapyList
       });
       
-      calculateTotals(therapyList);
+      calculateTotals(formattedTherapyList);
     } else {
       setIsEditMode(false);
       setSelectedDiagnosis(null);
       setSelectedPatient(null);
       setPatientSearchTerm('');
       
+      const today = new Date().toISOString().split('T')[0];
+      
       setFormData({
         ID: null,
+        Date: today,
         _summaryVar: {
           PatientID: null,
           Problems: '',
@@ -695,12 +897,10 @@ const Diagnosis = () => {
       setTherapyFormData({
         TherapyID: null,
         TherapyName: '',
-        Time1: '',
-        Time2: '',
+        time1: '',
+        time2: '',
         Price: 0,
-        TotalAmount: 0,
-        DiscountAmount: 0,
-        NetAmount: 0
+        DiscountAmount: 0
       });
       setSelectedTherapy(null);
       setTherapySearchTerm('');
@@ -735,7 +935,6 @@ const Diagnosis = () => {
         </button>
       </div>
 
-      {/* Search Bar */}
       <div className="mb-6">
         <div className="relative max-w-md">
           <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
@@ -782,8 +981,8 @@ const Diagnosis = () => {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">ID</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Patient</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider hidden md:table-cell">Problems</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider hidden lg:table-cell">Therapies</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider hidden md:table-cell">Date</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider hidden lg:table-cell">Problems</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
               </tr>
@@ -799,12 +998,12 @@ const Diagnosis = () => {
                 filteredDiagnoses.map((diagnosis) => {
                   const summary = diagnosis._summaryVar || {};
                   const patient = diagnosis._patientVar || {};
-                  const therapyList = diagnosis._therapyList || [];
+                  const totalAmount = summary.NetPayableAmount || summary.GrandTotal || 0;
                   
                   return (
-                    <tr key={diagnosis.ID || diagnosis.id} className="hover:bg-gray-50 transition-colors">
+                    <tr key={diagnosis.ID} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3">
-                        <p className="text-xs font-mono text-gray-500">{diagnosis.ID || diagnosis.id}</p>
+                        <p className="text-xs font-mono text-gray-500">{diagnosis.ID}</p>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
@@ -818,16 +1017,16 @@ const Diagnosis = () => {
                         </div>
                       </td>
                       <td className="px-4 py-3 hidden md:table-cell">
+                        <p className="text-sm text-gray-600">{formatDateDisplay(diagnosis.Date)}</p>
+                      </td>
+                      <td className="px-4 py-3 hidden lg:table-cell">
                         <p className="text-sm text-gray-600 truncate max-w-xs">
                           {summary.Problems || 'No problems recorded'}
                         </p>
                       </td>
-                      <td className="px-4 py-3 hidden lg:table-cell">
-                        <p className="text-sm text-gray-600">{therapyList.length} therapy(ies)</p>
-                      </td>
                       <td className="px-4 py-3">
                         <p className="text-sm font-semibold text-[#57ABB2]">
-                          ₹{summary.NetPayableAmount || summary.GrandTotal || 0}
+                          ₹{totalAmount}
                         </p>
                       </td>
                       <td className="px-4 py-3">
@@ -840,7 +1039,7 @@ const Diagnosis = () => {
                             <FaEdit />
                           </button>
                           <button
-                            onClick={() => handleDelete(diagnosis.ID || diagnosis.id, patient.Name)}
+                            onClick={() => handleDelete(diagnosis.ID, patient.Name || 'Unknown')}
                             className="p-2 text-[#AE261B] hover:bg-[#AE261B]/10 rounded-lg transition-colors cursor-pointer"
                             title="Delete"
                           >
@@ -880,7 +1079,6 @@ const Diagnosis = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-6">
-              {/* Created By Info */}
               <div className="bg-blue-50 rounded-lg p-3 border border-blue-100 flex items-center gap-3">
                 <FaUserCog className="text-[#57ABB2] text-lg" />
                 <div>
@@ -888,11 +1086,23 @@ const Diagnosis = () => {
                   <p className="text-sm text-gray-600">
                     {getAdminUser()?.name || 'Admin'} (ID: {getAdminUserId() || 'N/A'})
                   </p>
-                  <p className="text-xs text-gray-400">This diagnosis will be recorded under your name</p>
                 </div>
               </div>
 
-              {/* Patient Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <FaCalendarAlt className="inline mr-2 text-[#57ABB2]" />
+                  Diagnosis Date
+                </label>
+                <input
+                  type="date"
+                  name="Date"
+                  value={formData.Date}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2.5 rounded-lg border-2 border-gray-200 focus:border-[#57ABB2] focus:outline-none transition-colors"
+                />
+              </div>
+
               <div className="relative">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Patient *</label>
                 <div className="relative">
@@ -978,7 +1188,6 @@ const Diagnosis = () => {
                 />
               </div>
 
-              {/* Therapy List */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Therapies *</label>
                 {errors.TherapyList && (
@@ -988,10 +1197,8 @@ const Diagnosis = () => {
                   </p>
                 )}
                 
-                {/* Add Therapy */}
                 <div className="grid grid-cols-1 md:grid-cols-6 gap-3 mb-3 p-4 bg-gray-50 rounded-lg">
                   <div className="relative md:col-span-2">
-                     <label className="block text-xs text-gray-500 mb-1">Therapy</label>
                     <input
                       type="text"
                       placeholder="Search therapy..."
@@ -1002,7 +1209,6 @@ const Diagnosis = () => {
                     />
                     {showTherapyDropdown && filteredTherapies.length > 0 && (
                       <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-32 overflow-y-auto">
-                        
                         {filteredTherapies.map(therapy => (
                           <button
                             key={therapy.ID || therapy.id}
@@ -1020,30 +1226,54 @@ const Diagnosis = () => {
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">
                       <FaSun className="inline mr-1 text-yellow-500" />
-                      Morning Time
+                      Morning
                     </label>
-                    <input
-                      type="time"
-                      name="Time1"
-                      value={therapyFormData.Time1}
-                      onChange={handleTherapyInputChange}
-                      className="w-full px-4 py-2 rounded-lg border-2 border-gray-200 focus:border-[#57ABB2] focus:outline-none transition-colors"
-                      placeholder="Morning"
-                    />
+                    <div className="relative">
+                      <input
+                        type="time"
+                        name="time1"
+                        value={therapyFormData.time1}
+                        onChange={handleTherapyInputChange}
+                        className="w-full px-4 py-2 rounded-lg border-2 border-gray-200 focus:border-[#57ABB2] focus:outline-none transition-colors pr-8"
+                      />
+                      {therapyFormData.time1 && (
+                        <button
+                          type="button"
+                          onClick={() => clearTimeField('time1')}
+                          className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+                          title="Clear time"
+                        >
+                          <FaTimes className="text-xs" />
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">Optional</p>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">
                       <FaMoon className="inline mr-1 text-blue-500" />
-                      Evening Time
+                      Evening
                     </label>
-                    <input
-                      type="time"
-                      name="Time2"
-                      value={therapyFormData.Time2}
-                      onChange={handleTherapyInputChange}
-                      className="w-full px-4 py-2 rounded-lg border-2 border-gray-200 focus:border-[#57ABB2] focus:outline-none transition-colors"
-                      placeholder="Evening"
-                    />
+                    <div className="relative">
+                      <input
+                        type="time"
+                        name="time2"
+                        value={therapyFormData.time2}
+                        onChange={handleTherapyInputChange}
+                        className="w-full px-4 py-2 rounded-lg border-2 border-gray-200 focus:border-[#57ABB2] focus:outline-none transition-colors pr-8"
+                      />
+                      {therapyFormData.time2 && (
+                        <button
+                          type="button"
+                          onClick={() => clearTimeField('time2')}
+                          className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+                          title="Clear time"
+                        >
+                          <FaTimes className="text-xs" />
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">Optional</p>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Discount</label>
@@ -1070,7 +1300,6 @@ const Diagnosis = () => {
                   </div>
                 </div>
 
-                {/* Therapy List Table */}
                 {formData._therapyList.length > 0 ? (
                   <div className="overflow-x-auto border rounded-lg">
                     <table className="w-full">
@@ -1081,39 +1310,39 @@ const Diagnosis = () => {
                           <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Evening</th>
                           <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Price</th>
                           <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Discount</th>
-                          <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Net</th>
                           <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {formData._therapyList.map((therapy, index) => (
-                          <tr key={index}>
-                            <td className="px-3 py-2 text-sm">
-                              {therapy.TherapyName || 'Unnamed'}
-                            </td>
-                            <td className="px-3 py-2 text-sm">{therapy.Time1 || '-'}</td>
-                            <td className="px-3 py-2 text-sm">{therapy.Time2 || '-'}</td>
-                            <td className="px-3 py-2 text-sm text-right">₹{therapy.Price}</td>
-                            <td className="px-3 py-2 text-sm text-right">₹{therapy.DiscountAmount || 0}</td>
-                            <td className="px-3 py-2 text-sm text-right font-medium text-[#57ABB2]">₹{therapy.NetAmount || therapy.Price}</td>
-                            <td className="px-3 py-2 text-center">
-                              <button
-                                type="button"
-                                onClick={() => removeTherapy(index)}
-                                className="text-[#AE261B] hover:text-[#AE261B]/80 transition-colors cursor-pointer"
-                              >
-                                <FaMinusCircle />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {formData._therapyList.map((therapy, index) => {
+                          const time1Display = therapy.time1 ? formatTimeDisplay(therapy.time1) : '-';
+                          const time2Display = therapy.time2 ? formatTimeDisplay(therapy.time2) : '-';
+                          
+                          return (
+                            <tr key={index}>
+                              <td className="px-3 py-2 text-sm">{therapy.TherapyName || 'Unnamed'}</td>
+                              <td className="px-3 py-2 text-sm">{time1Display}</td>
+                              <td className="px-3 py-2 text-sm">{time2Display}</td>
+                              <td className="px-3 py-2 text-sm text-right">₹{therapy.Price}</td>
+                              <td className="px-3 py-2 text-sm text-right">₹{therapy.DiscountAmount || 0}</td>
+                              <td className="px-3 py-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => removeTherapy(index)}
+                                  className="text-[#AE261B] hover:text-[#AE261B]/80 transition-colors cursor-pointer"
+                                >
+                                  <FaMinusCircle />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                       <tfoot className="bg-gray-50 border-t">
                         <tr>
                           <td colSpan="3" className="px-3 py-2 text-right font-medium">Totals:</td>
                           <td className="px-3 py-2 text-right font-medium">₹{formData._summaryVar.TotalTherapyAmount}</td>
                           <td className="px-3 py-2 text-right font-medium">₹{formData._summaryVar.TherapyDiscount}</td>
-                          <td className="px-3 py-2 text-right font-medium text-[#57ABB2]">₹{formData._summaryVar.NetTherapyAmount}</td>
                           <td></td>
                         </tr>
                       </tfoot>
@@ -1124,7 +1353,6 @@ const Diagnosis = () => {
                 )}
               </div>
 
-              {/* Summary */}
               <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                 <h4 className="font-semibold text-gray-700 mb-2">Summary</h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
