@@ -221,38 +221,67 @@ const Diagnosis = () => {
   }, []);
 
   // Fetch full invoice details for editing.
-  // `date` must be a real YYYY-MM-DD string — never the literal word "null",
-  // which was previously being sent straight into the URL.
+  //
+  // `date` should be a real YYYY-MM-DD string when known — never the literal
+  // word "null". We try that first (so the URL is well-formed). But some
+  // backends use the date segment as a filter, and if it doesn't match the
+  // record's stored date exactly, they respond 200 with an empty/partial
+  // object instead of an error — which would otherwise silently wipe out
+  // fields that used to come through fine. So if the date-scoped response
+  // looks empty, we retry with an empty date segment (the original behavior)
+  // before giving up.
   const fetchInvoiceDetails = useCallback(async (date, diagnosisId, adminId) => {
-    try {
-      const format = 'json';
+    const format = 'json';
 
-      const dateParam = date || new Date().toISOString().split('T')[0];
+    const tryFetch = async (dateSegment) => {
+      try {
+        const url = `/api/DiagnosisAPI/Search/Invoice/${format}/${dateSegment}/${diagnosisId}/${adminId}`;
+        console.log('Trying URL:', url);
 
-      const url = `/api/DiagnosisAPI/Search/Invoice/${format}/${dateParam}/${diagnosisId}/${adminId}`;
-      console.log('Trying URL:', url);
+        const response = await axiosInstance.get(url);
 
-      const response = await axiosInstance.get(url);
-      
-      if (typeof response.data === 'string' && response.data.trim().startsWith('<!DOCTYPE')) {
-        console.error('Received HTML instead of JSON');
+        if (typeof response.data === 'string' && response.data.trim().startsWith('<!DOCTYPE')) {
+          console.error('Received HTML instead of JSON');
+          return null;
+        }
+
+        let invoiceData = response.data;
+        if (response.data?.data) {
+          invoiceData = response.data.data;
+        }
+        if (response.data?.result) {
+          invoiceData = response.data.result;
+        }
+
+        console.log('Invoice data:', invoiceData);
+        return invoiceData;
+      } catch (error) {
+        console.error('Error fetching invoice details:', error);
         return null;
       }
-      
-      let invoiceData = response.data;
-      if (response.data.data) {
-        invoiceData = response.data.data;
+    };
+
+    const dateParam = date || new Date().toISOString().split('T')[0];
+    let invoiceData = await tryFetch(dateParam);
+
+    const hasContent =
+      invoiceData &&
+      typeof invoiceData === 'object' &&
+      (
+        invoiceData._summaryVar?.Problems ||
+        invoiceData._summaryVar?.PatientID ||
+        (Array.isArray(invoiceData._therapyList) && invoiceData._therapyList.length > 0)
+      );
+
+    if (!hasContent) {
+      console.warn('Date-scoped invoice fetch came back empty — retrying with no date filter');
+      const fallback = await tryFetch('');
+      if (fallback && typeof fallback === 'object') {
+        invoiceData = fallback;
       }
-      if (response.data.result) {
-        invoiceData = response.data.result;
-      }
-      
-      console.log('Invoice data:', invoiceData);
-      return invoiceData;
-    } catch (error) {
-      console.error('Error fetching invoice details:', error);
-      return null;
     }
+
+    return invoiceData;
   }, []);
 
   // Returns the loaded array (not just sets state) so callers can use fresh data immediately
