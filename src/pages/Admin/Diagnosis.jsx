@@ -207,24 +207,30 @@ const Diagnosis = () => {
     }
   }, []);
 
-  // Fetch full invoice details for editing
+  // Fetch full invoice details for editing - using the correct endpoint
   const fetchInvoiceDetails = useCallback(async (diagnosisId, adminId) => {
     try {
+      // Try different date formats
       const format = 'json';
-      // Try with empty string instead of null for date
-      const date = '';
-      const url = `/api/DiagnosisAPI/Get/Search/Invoice/${format}/${date}/${diagnosisId}/${adminId}`;
       
-      console.log('Fetching invoice from URL:', url);
+      // Try with empty date
+      let url = `/api/DiagnosisAPI/Search/Invoice/${format}//${diagnosisId}/${adminId}`;
+      console.log('Trying URL:', url);
       
-      const response = await axiosInstance.get(url);
+      let response = await axiosInstance.get(url);
+      
+      // If that fails, try with null
+      if (!response.data || typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
+        url = `/api/DiagnosisAPI/Search/Invoice/${format}/null/${diagnosisId}/${adminId}`;
+        console.log('Trying URL:', url);
+        response = await axiosInstance.get(url);
+      }
       
       console.log('Response status:', response.status);
-      console.log('Response type:', typeof response.data);
       
-      // If the response is HTML (starts with <), it's an error
+      // If response is HTML, it's an error
       if (typeof response.data === 'string' && response.data.trim().startsWith('<!DOCTYPE')) {
-        console.error('Received HTML instead of JSON - endpoint might be wrong');
+        console.error('Received HTML instead of JSON');
         return null;
       }
       
@@ -236,14 +242,10 @@ const Diagnosis = () => {
         invoiceData = response.data.result;
       }
       
-      console.log('Extracted invoice data:', invoiceData);
+      console.log('Invoice data:', invoiceData);
       return invoiceData;
     } catch (error) {
       console.error('Error fetching invoice details:', error);
-      if (error.response) {
-        console.error('Status:', error.response.status);
-        console.error('Data:', error.response.data);
-      }
       return null;
     }
   }, []);
@@ -491,12 +493,12 @@ const Diagnosis = () => {
     const time2 = therapyFormData.time2 ? formatTimeToISO(therapyFormData.time2, diagnosisDate) : null;
     
     const newTherapy = {
-      TherapyID: therapyFormData.TherapyID,
+      therapyID: therapyFormData.TherapyID,
       TherapyName: therapyFormData.TherapyName || selectedTherapy?.Name || '',
       time1: time1,
       time2: time2,
-      Price: price,
-      DiscountAmount: discount
+      price: price,
+      discountAmount: discount
     };
     
     setFormData(prev => ({
@@ -533,8 +535,8 @@ const Diagnosis = () => {
     let netTherapyAmount = 0;
     
     therapyList.forEach(therapy => {
-      const price = parseFloat(therapy.Price) || 0;
-      const discount = parseFloat(therapy.DiscountAmount) || 0;
+      const price = parseFloat(therapy.price) || 0;
+      const discount = parseFloat(therapy.discountAmount) || 0;
       totalTherapyAmount += price;
       totalDiscount += discount;
       netTherapyAmount += (price - discount);
@@ -626,9 +628,8 @@ const Diagnosis = () => {
     setIsSubmitting(true);
     
     try {
-      // IMPORTANT: Preserve the ID for updates
       const requestData = {
-        ID: isEditMode ? selectedDiagnosis.ID : null,  // This is the key!
+        ID: isEditMode ? selectedDiagnosis.ID : null,
         Date: formData.Date || null,
         _summaryVar: {
           PatientID: patientId,
@@ -637,17 +638,15 @@ const Diagnosis = () => {
           Precautions: formData._summaryVar.Precautions || ''
         },
         _therapyList: formData._therapyList.map(therapy => ({
-          TherapyID: therapy.TherapyID,
+          therapyID: therapy.therapyID || therapy.TherapyID,
           time1: therapy.time1 || null,
           time2: therapy.time2 || null,
-          Price: therapy.Price,
-          DiscountAmount: therapy.DiscountAmount || 0
+          price: therapy.price || therapy.Price || 0,
+          discountAmount: therapy.discountAmount || therapy.DiscountAmount || 0
         }))
       };
 
-      console.log('Saving diagnosis with ID:', requestData.ID);
-      console.log('Is Edit Mode:', isEditMode);
-      console.log('Request data:', JSON.stringify(requestData, null, 2));
+      console.log('Saving diagnosis:', JSON.stringify(requestData, null, 2));
 
       const response = await axiosInstance.post(
         `/api/DiagnosisAPI/Save/${adminId}`,
@@ -759,7 +758,6 @@ const Diagnosis = () => {
       console.log('=== EDITING DIAGNOSIS ID:', diagnosis.ID);
       console.log('Diagnosis from list:', diagnosis);
       
-      // For edit, we try to fetch invoice details
       const adminId = getAdminUserId();
       if (!adminId) {
         toast.error('Admin user not found');
@@ -767,24 +765,22 @@ const Diagnosis = () => {
         return;
       }
       
-      let summary = diagnosis._summaryVar || {};
-      let therapyList = [];
-      let patient = diagnosis._patientVar || {};
-      let dateValue = diagnosis.Date || '';
-      
       // Try to fetch full invoice details
       const invoiceData = await fetchInvoiceDetails(diagnosis.ID, adminId);
       
+      let summary = {};
+      let therapyList = [];
+      let patient = {};
+      let dateValue = '';
+      
       if (invoiceData && typeof invoiceData === 'object' && !invoiceData.includes) {
         console.log('Using invoice data for edit');
-        // Use the invoice data
-        summary = invoiceData._summaryVar || invoiceData._summaryVar || summary;
+        summary = invoiceData._summaryVar || invoiceData._summaryVar || {};
         therapyList = invoiceData._therapyList || invoiceData._therapyList || [];
-        patient = invoiceData._patientVar || invoiceData._patientVar || patient;
-        dateValue = invoiceData.Date || invoiceData.date || dateValue;
+        patient = invoiceData._patientVar || invoiceData._patientVar || {};
+        dateValue = invoiceData.Date || invoiceData.date || '';
       } else {
         console.log('Using list data for edit (invoice fetch failed)');
-        // Use the list data
         summary = diagnosis._summaryVar || {};
         therapyList = diagnosis._therapyList || [];
         patient = diagnosis._patientVar || {};
@@ -792,9 +788,8 @@ const Diagnosis = () => {
       }
       
       console.log('Summary:', summary);
-      console.log('Therapy list:', therapyList);
+      console.log('Raw therapy list:', therapyList);
       console.log('Patient:', patient);
-      console.log('Date:', dateValue);
       
       // Set the patient
       if (summary.PatientID) {
@@ -816,52 +811,78 @@ const Diagnosis = () => {
         }
       }
       
-      // Format therapies
-      const formattedTherapyList = therapyList.map(t => {
+      // IMPORTANT: Format therapies - handle the actual data structure from backend
+      const formattedTherapyList = therapyList.map((t, index) => {
+        // Try to get therapy name from various places
         let therapyName = 'Unnamed';
-        if (t._therapy?.Name) therapyName = t._therapy.Name;
-        else if (t.TherapyName) therapyName = t.TherapyName;
-        else if (t.therapyName) therapyName = t.therapyName;
-        else if (t.Name) therapyName = t.Name;
         
+        // Check if _therapy exists and has Name
+        if (t._therapy && t._therapy.Name) {
+          therapyName = t._therapy.Name;
+        } 
+        // Check direct properties
+        else if (t.TherapyName) {
+          therapyName = t.TherapyName;
+        } else if (t.therapyName) {
+          therapyName = t.therapyName;
+        } else if (t.Name) {
+          therapyName = t.Name;
+        } else if (t.name) {
+          therapyName = t.name;
+        }
+        // If still unnamed, try to find by therapyID from the therapies list
+        else {
+          const therapyId = t.therapyID || t.TherapyID || t.id;
+          if (therapyId) {
+            const foundTherapy = therapies.find(th => (th.ID || th.id) === therapyId);
+            if (foundTherapy) {
+              therapyName = foundTherapy.Name || foundTherapy.name || 'Unnamed';
+            }
+          }
+        }
+        
+        // Get time values
         let time1Display = '';
         let time2Display = '';
         
-        if (t.time1 || t.Time1) {
-          const timeVal = t.time1 || t.Time1;
-          time1Display = extractTimeFromISO(timeVal) || timeVal;
+        const time1Val = t.time1 || t.Time1 || null;
+        const time2Val = t.time2 || t.Time2 || null;
+        
+        if (time1Val) {
+          time1Display = extractTimeFromISO(time1Val) || time1Val;
         }
-        if (t.time2 || t.Time2) {
-          const timeVal = t.time2 || t.Time2;
-          time2Display = extractTimeFromISO(timeVal) || timeVal;
+        if (time2Val) {
+          time2Display = extractTimeFromISO(time2Val) || time2Val;
         }
         
         return {
-          TherapyID: t.TherapyID || t.therapyId || null,
+          therapyID: t.therapyID || t.TherapyID || t.id || null,
           TherapyName: therapyName,
           time1: time1Display,
           time2: time2Display,
-          Price: t.Price || t.price || 0,
-          DiscountAmount: t.DiscountAmount || t.discountAmount || 0
+          price: t.price || t.Price || 0,
+          discountAmount: t.discountAmount || t.DiscountAmount || 0
         };
       });
+      
+      console.log('Formatted therapy list:', formattedTherapyList);
       
       setFormData({
         ID: diagnosis.ID || null,
         Date: dateValue,
         _summaryVar: {
-          PatientID: summary.PatientID || null,
-          Problems: summary.Problems || '',
-          Advice: summary.Advice || '',
-          Precautions: summary.Precautions || '',
-          TotalTherapyAmount: summary.TotalTherapyAmount || 0,
-          TherapyDiscount: summary.TherapyDiscount || 0,
-          NetTherapyAmount: summary.NetTherapyAmount || 0,
-          TotalAmount: summary.TotalAmount || 0,
-          DiscountAmount: summary.DiscountAmount || 0,
-          GrandTotal: summary.GrandTotal || 0,
-          RoundOff: summary.RoundOff || 0,
-          NetPayableAmount: summary.NetPayableAmount || 0
+          PatientID: summary.PatientID || summary.patientId || null,
+          Problems: summary.Problems || summary.problems || '',
+          Advice: summary.Advice || summary.advice || '',
+          Precautions: summary.Precautions || summary.precautions || '',
+          TotalTherapyAmount: summary.TotalTherapyAmount || summary.totalTherapyAmount || 0,
+          TherapyDiscount: summary.TherapyDiscount || summary.therapyDiscount || 0,
+          NetTherapyAmount: summary.NetTherapyAmount || summary.netTherapyAmount || 0,
+          TotalAmount: summary.TotalAmount || summary.totalAmount || 0,
+          DiscountAmount: summary.DiscountAmount || summary.discountAmount || 0,
+          GrandTotal: summary.GrandTotal || summary.grandTotal || 0,
+          RoundOff: summary.RoundOff || summary.roundOff || 0,
+          NetPayableAmount: summary.NetPayableAmount || summary.netPayableAmount || 0
         },
         _therapyList: formattedTherapyList
       });
@@ -1188,6 +1209,7 @@ const Diagnosis = () => {
                 />
               </div>
 
+              {/* Therapy List */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Therapies *</label>
                 {errors.TherapyList && (
@@ -1323,8 +1345,8 @@ const Diagnosis = () => {
                               <td className="px-3 py-2 text-sm">{therapy.TherapyName || 'Unnamed'}</td>
                               <td className="px-3 py-2 text-sm">{time1Display}</td>
                               <td className="px-3 py-2 text-sm">{time2Display}</td>
-                              <td className="px-3 py-2 text-sm text-right">₹{therapy.Price}</td>
-                              <td className="px-3 py-2 text-sm text-right">₹{therapy.DiscountAmount || 0}</td>
+                              <td className="px-3 py-2 text-sm text-right">₹{therapy.price || 0}</td>
+                              <td className="px-3 py-2 text-sm text-right">₹{therapy.discountAmount || 0}</td>
                               <td className="px-3 py-2 text-center">
                                 <button
                                   type="button"
@@ -1353,6 +1375,7 @@ const Diagnosis = () => {
                 )}
               </div>
 
+              {/* Summary */}
               <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                 <h4 className="font-semibold text-gray-700 mb-2">Summary</h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
