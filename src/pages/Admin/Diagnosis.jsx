@@ -93,53 +93,83 @@ const Diagnosis = () => {
     }
   };
 
-  // Format time to ISO datetime string with given date
+  // Format time to ISO datetime string with given date — preserve local time by using the date string directly
   const formatTimeToISO = (timeStr, dateStr) => {
     if (!timeStr) return null;
-    const date = dateStr ? new Date(dateStr) : new Date();
-    const [hours, minutes] = timeStr.split(':');
-    date.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-    return date.toISOString();
+    // If we have a date in YYYY-MM-DD format, build the ISO string directly
+    if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return `${dateStr}T${timeStr}:00.000Z`;
+    }
+    // Fallback: use today's date in local time
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}T${timeStr}:00.000Z`;
   };
 
-  // Extract time from ISO string for display
+  // Extract time from ISO string for display (preserve the actual hour/min from the string, no timezone conversion)
   const extractTimeFromISO = (isoString) => {
     if (!isoString) return null;
-    try {
-      const date = new Date(isoString);
-      return date.toTimeString().slice(0, 5);
-    } catch {
-      return null;
+    // Try to match the time part from the ISO string directly
+    const match = isoString.match(/T(\d{2}):(\d{2})/);
+    if (match) {
+      return `${match[1]}:${match[2]}`; // Return "HH:MM" as stored
     }
+    return null;
   };
 
-  // Format time for display in table
+  // Format time for display in 12-hour AM/PM format, preserving the raw hour/min from the ISO string
   const formatTimeDisplay = (isoString) => {
     if (!isoString) return '-';
-    try {
-      const date = new Date(isoString);
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return '-';
+    
+    // Extract hour and minute from the ISO string directly (no Date object)
+    let hour, minute;
+    
+    // Try to match ISO format with T separator
+    let match = isoString.match(/T(\d{2}):(\d{2})/);
+    if (match) {
+      hour = parseInt(match[1], 10);
+      minute = match[2];
+    } else {
+      // Try to match simple time format "HH:MM"
+      match = isoString.match(/^(\d{2}):(\d{2})/);
+      if (match) {
+        hour = parseInt(match[1], 10);
+        minute = match[2];
+      } else {
+        return '-';
+      }
     }
+    
+    // Convert to 12-hour format
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    let hour12 = hour % 12;
+    hour12 = hour12 ? hour12 : 12; // 12-hour format (0 -> 12)
+    
+    return `${String(hour12).padStart(2, '0')}:${minute} ${ampm}`;
   };
 
   // Format date for display
   const formatDateDisplay = (isoString) => {
     if (!isoString) return '-';
     try {
-      const date = new Date(isoString);
-      if (isNaN(date.getTime())) return '-';
-      return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      // Extract date part directly from string to avoid timezone issues
+      const match = isoString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (match) {
+        const year = match[1];
+        const month = parseInt(match[2], 10);
+        const day = parseInt(match[3], 10);
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return `${String(day).padStart(2, '0')}-${monthNames[month - 1]}-${year}`;
+      }
+      return '-';
     } catch {
       return '-';
     }
   };
 
   // Builds a YYYY-MM-DD string from a Date object's LOCAL parts.
-  // Only used when we don't already have a date string to work with (e.g.
-  // "today"). Never use `.toISOString().split('T')[0]` — that converts to
-  // UTC and rolls the day back for timezones ahead of UTC (like IST).
   const getLocalDateString = (date = new Date()) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -148,10 +178,6 @@ const Diagnosis = () => {
   };
 
   // Safely turn any date-ish value into a YYYY-MM-DD string for <input type="date">.
-  // Keep it simple: the backend already sends dates as "YYYY-MM-DD..." strings,
-  // so just take the first 10 characters directly — no Date object, no
-  // timezone conversion, no drift. Only falls back to Date parsing for values
-  // that aren't already in that shape.
   const toDateInputValue = (value) => {
     if (!value || value === 'null' || value === 'undefined') return '';
     const str = String(value);
@@ -239,15 +265,6 @@ const Diagnosis = () => {
   }, []);
 
   // Fetch full invoice details for editing.
-  //
-  // `date` should be a real YYYY-MM-DD string when known — never the literal
-  // word "null". We try that first (so the URL is well-formed). But some
-  // backends use the date segment as a filter, and if it doesn't match the
-  // record's stored date exactly, they respond 200 with an empty/partial
-  // object instead of an error — which would otherwise silently wipe out
-  // fields that used to come through fine. So if the date-scoped response
-  // looks empty, we retry with an empty date segment (the original behavior)
-  // before giving up.
   const fetchInvoiceDetails = useCallback(async (date, diagnosisId, adminId) => {
     const format = 'json';
 
@@ -550,8 +567,6 @@ const Diagnosis = () => {
     const time1 = therapyFormData.time1 ? formatTimeToISO(therapyFormData.time1, diagnosisDate) : null;
     const time2 = therapyFormData.time2 ? formatTimeToISO(therapyFormData.time2, diagnosisDate) : null;
     
-    // NOTE: `id` is intentionally omitted here — this is a brand-new therapy line,
-    // it has no existing detail-row id from the backend yet.
     const newTherapy = {
       id: null,
       therapyID: therapyFormData.TherapyID,
@@ -688,7 +703,6 @@ const Diagnosis = () => {
       return;
     }
 
-    // Guard: edit mode with a missing ID would silently turn an update into a create.
     if (isEditMode && !selectedDiagnosis?.ID) {
       console.error('Edit mode is active but selectedDiagnosis.ID is missing:', selectedDiagnosis);
       toast.error('Could not identify the record being edited. Please close and reopen it.');
@@ -707,10 +721,6 @@ const Diagnosis = () => {
           Advice: formData._summaryVar.Advice || '',
           Precautions: formData._summaryVar.Precautions || ''
         },
-        // Preserve each therapy line's own detail-row `id` when it exists so the
-        // backend updates that row instead of inserting a duplicate. New lines
-        // (added during this edit) have id === null, which the backend should
-        // treat as "insert".
         _therapyList: formData._therapyList.map(therapy => ({
           id: therapy.id || null,
           therapyID: therapy.therapyID || therapy.TherapyID,
@@ -843,16 +853,11 @@ const Diagnosis = () => {
         return;
       }
       
-      // Make sure we have fresh, complete master lists to resolve names against —
-      // don't trust closure state, which may still be empty on first load or
-      // stale after a filtered search.
       const [patientsData, therapiesData] = await Promise.all([
         loadPatients(),
         loadTherapies()
       ]);
       
-      // The invoice lookup needs the diagnosis's own date as YYYY-MM-DD —
-      // fall back to today's date only if the list row has none.
       const dateForLookup = toDateInputValue(diagnosis.Date) || getLocalDateString();
 
       const invoiceData = await fetchInvoiceDetails(dateForLookup, diagnosis.ID, adminId);
@@ -875,16 +880,12 @@ const Diagnosis = () => {
         rawDate = diagnosis.Date || null;
       }
       
-      // The diagnosis-level Date field isn't always populated by the invoice
-      // endpoint — fall back to the first therapy line's own date if needed.
       if (!rawDate || rawDate === 'null') {
         const firstTherapyWithDate = therapyList.find(t => t.date || t.Date);
         rawDate = firstTherapyWithDate ? (firstTherapyWithDate.date || firstTherapyWithDate.Date) : null;
       }
       const dateValue = toDateInputValue(rawDate);
       
-      // Resolve patient name against the freshly loaded master list, and
-      // actually use the result (previously computed but discarded).
       const resolvedPatientId = summary.PatientID ?? summary.patientID ?? summary.patientId ?? null;
       let resolvedPatientName = 'Unknown';
       if (resolvedPatientId) {
@@ -897,9 +898,7 @@ const Diagnosis = () => {
         setPatientSearchTerm(resolvedPatientName);
       }
       
-      // Format therapies against the freshly loaded therapy master list, and
-      // preserve each line's own detail-row `id` so submit can update it
-      // instead of creating a duplicate.
+      // Format therapies — preserve raw times from ISO strings (no Date conversion)
       const formattedTherapyList = therapyList.map((t) => {
         let therapyName = '';
         
@@ -923,17 +922,11 @@ const Diagnosis = () => {
         }
         if (!therapyName) therapyName = 'Unnamed';
         
-        // Keep time1/time2 as the raw ISO string — same shape addTherapy()
-        // produces for new lines. The table display (formatTimeDisplay) parses
-        // this with `new Date(...)`, so shrinking it to "HH:MM" here first
-        // (as before) fed it an unparsable string and showed "Invalid Date".
+        // Keep time1/time2 as the raw ISO string — no Date conversion
         const time1Val = t.time1 || t.Time1 || null;
         const time2Val = t.time2 || t.Time2 || null;
         
         return {
-          // This is the detail row's own primary key — distinct from therapyID
-          // (the master therapy it points to). Sending this back on submit is
-          // what lets the backend update the row instead of inserting a new one.
           id: t.id ?? t.ID ?? null,
           therapyID: therapyId,
           TherapyName: therapyName,
