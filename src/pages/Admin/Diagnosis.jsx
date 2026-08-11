@@ -136,14 +136,32 @@ const Diagnosis = () => {
     }
   };
 
-  // Safely turn any date-ish value into a yyyy-MM-dd string for <input type="date">.
-  // Guards against literal "null"/"undefined" strings and invalid dates.
+  // Builds a YYYY-MM-DD string from a Date object's LOCAL parts.
+  // Only used when we don't already have a date string to work with (e.g.
+  // "today"). Never use `.toISOString().split('T')[0]` — that converts to
+  // UTC and rolls the day back for timezones ahead of UTC (like IST).
+  const getLocalDateString = (date = new Date()) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Safely turn any date-ish value into a YYYY-MM-DD string for <input type="date">.
+  // Keep it simple: the backend already sends dates as "YYYY-MM-DD..." strings,
+  // so just take the first 10 characters directly — no Date object, no
+  // timezone conversion, no drift. Only falls back to Date parsing for values
+  // that aren't already in that shape.
   const toDateInputValue = (value) => {
     if (!value || value === 'null' || value === 'undefined') return '';
+    const str = String(value);
+    if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+      return str.slice(0, 10);
+    }
     try {
-      const d = new Date(value);
+      const d = new Date(str);
       if (isNaN(d.getTime())) return '';
-      return d.toISOString().split('T')[0];
+      return getLocalDateString(d);
     } catch {
       return '';
     }
@@ -261,7 +279,7 @@ const Diagnosis = () => {
       }
     };
 
-    const dateParam = date || new Date().toISOString().split('T')[0];
+    const dateParam = date || getLocalDateString();
     let invoiceData = await tryFetch(dateParam);
 
     const hasContent =
@@ -527,7 +545,7 @@ const Diagnosis = () => {
     const price = parseFloat(therapyFormData.Price) || 0;
     const discount = parseFloat(therapyFormData.DiscountAmount) || 0;
     
-    const diagnosisDate = formData.Date || new Date().toISOString().split('T')[0];
+    const diagnosisDate = formData.Date || getLocalDateString();
     
     const time1 = therapyFormData.time1 ? formatTimeToISO(therapyFormData.time1, diagnosisDate) : null;
     const time2 = therapyFormData.time2 ? formatTimeToISO(therapyFormData.time2, diagnosisDate) : null;
@@ -835,9 +853,7 @@ const Diagnosis = () => {
       
       // The invoice lookup needs the diagnosis's own date as YYYY-MM-DD —
       // fall back to today's date only if the list row has none.
-      const dateForLookup = diagnosis.Date
-        ? new Date(diagnosis.Date).toISOString().split('T')[0]
-        : new Date().toISOString().split('T')[0];
+      const dateForLookup = toDateInputValue(diagnosis.Date) || getLocalDateString();
 
       const invoiceData = await fetchInvoiceDetails(dateForLookup, diagnosis.ID, adminId);
       
@@ -950,7 +966,7 @@ const Diagnosis = () => {
       setSelectedPatient(null);
       setPatientSearchTerm('');
       
-      const today = new Date().toISOString().split('T')[0];
+      const today = getLocalDateString();
       
       setFormData({
         ID: null,
