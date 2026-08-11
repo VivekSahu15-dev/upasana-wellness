@@ -206,7 +206,7 @@ const Diagnosis = () => {
           ID: item.ID || item.id || null,
           Date: item.Date || item.date || null,
           _summaryVar: {
-            PatientID: summary.PatientID || summary.patientId || null,
+            PatientID: summary.PatientID || summary.patientID || summary.patientId || null,
             Problems: summary.Problems || summary.problems || '',
             Advice: summary.Advice || summary.advice || '',
             Precautions: summary.Precautions || summary.precautions || '',
@@ -286,8 +286,8 @@ const Diagnosis = () => {
       invoiceData &&
       typeof invoiceData === 'object' &&
       (
-        invoiceData._summaryVar?.Problems ||
-        invoiceData._summaryVar?.PatientID ||
+        invoiceData._summaryVar?.Problems || invoiceData._summaryVar?.problems ||
+        invoiceData._summaryVar?.PatientID || invoiceData._summaryVar?.patientID || invoiceData._summaryVar?.patientId ||
         (Array.isArray(invoiceData._therapyList) && invoiceData._therapyList.length > 0)
       );
 
@@ -427,7 +427,7 @@ const Diagnosis = () => {
           ID: item.ID || item.id || null,
           Date: item.Date || item.date || null,
           _summaryVar: {
-            PatientID: summary.PatientID || summary.patientId || null,
+            PatientID: summary.PatientID || summary.patientID || summary.patientId || null,
             Problems: summary.Problems || summary.problems || '',
             Advice: summary.Advice || summary.advice || '',
             Precautions: summary.Precautions || summary.precautions || '',
@@ -885,14 +885,15 @@ const Diagnosis = () => {
       
       // Resolve patient name against the freshly loaded master list, and
       // actually use the result (previously computed but discarded).
+      const resolvedPatientId = summary.PatientID ?? summary.patientID ?? summary.patientId ?? null;
       let resolvedPatientName = 'Unknown';
-      if (summary.PatientID) {
-        const foundPatient = patientsData.find(p => String(p.ID ?? p.id) === String(summary.PatientID));
+      if (resolvedPatientId) {
+        const foundPatient = patientsData.find(p => String(p.ID ?? p.id) === String(resolvedPatientId));
         resolvedPatientName =
           foundPatient?.Name || foundPatient?.name ||
           patient.Name || patient.name ||
           'Unknown';
-        setSelectedPatient(foundPatient || { ID: summary.PatientID, Name: resolvedPatientName });
+        setSelectedPatient(foundPatient || { ID: resolvedPatientId, Name: resolvedPatientName });
         setPatientSearchTerm(resolvedPatientName);
       }
       
@@ -922,6 +923,10 @@ const Diagnosis = () => {
         }
         if (!therapyName) therapyName = 'Unnamed';
         
+        // Keep time1/time2 as the raw ISO string — same shape addTherapy()
+        // produces for new lines. The table display (formatTimeDisplay) parses
+        // this with `new Date(...)`, so shrinking it to "HH:MM" here first
+        // (as before) fed it an unparsable string and showed "Invalid Date".
         const time1Val = t.time1 || t.Time1 || null;
         const time2Val = t.time2 || t.Time2 || null;
         
@@ -932,8 +937,8 @@ const Diagnosis = () => {
           id: t.id ?? t.ID ?? null,
           therapyID: therapyId,
           TherapyName: therapyName,
-          time1: time1Val ? (extractTimeFromISO(time1Val) || time1Val) : '',
-          time2: time2Val ? (extractTimeFromISO(time2Val) || time2Val) : '',
+          time1: time1Val,
+          time2: time2Val,
           price: t.price ?? t.Price ?? 0,
           discountAmount: t.discountAmount ?? t.DiscountAmount ?? 0
         };
@@ -943,7 +948,7 @@ const Diagnosis = () => {
         ID: diagnosis.ID,
         Date: dateValue,
         _summaryVar: {
-          PatientID: summary.PatientID || summary.patientId || null,
+          PatientID: summary.PatientID || summary.patientID || summary.patientId || null,
           Problems: summary.Problems || summary.problems || '',
           Advice: summary.Advice || summary.advice || '',
           Precautions: summary.Precautions || summary.precautions || '',
