@@ -46,7 +46,6 @@ const Patients = () => {
   const [patientCache, setPatientCache] = useState({});
   const isMounted = useRef(true);
   const countriesLoaded = useRef(false);
-  const searchTimeout = useRef(null);
 
   const getUserId = () => {
     const userId = localStorage.getItem('upasanaUserID');
@@ -212,96 +211,23 @@ const Patients = () => {
     }
   }, [patientCache]);
 
-  const searchPatients = useCallback(async (term) => {
+  const searchPatients = useCallback((term) => {
     if (!term || term.trim() === '') {
       setFilteredPatients(patients);
       return;
     }
-    
-    const userId = getUserId();
-    if (!userId) return;
-    
-    setSearchLoading(true);
-    try {
-      const response = await axiosInstance.post(
-        `/api/PatientsMasterAPI/Search/${userId}`,
-        {
-          ID: null,
-          Name: term.trim(),
-          DOB: null,
-          Contact: null,
-          Address: null,
-          CountryID: null,
-          StateID: null,
-          Gender: null,
-          ActiveStatus: null
-        }
-      );
-      
-      let data = [];
-      if (response.data) {
-        if (Array.isArray(response.data)) {
-          data = response.data;
-        } else if (response.data.data && Array.isArray(response.data.data)) {
-          data = response.data.data;
-        }
-      }
-      
-      data = data.map(item => {
-        const patientId = item.ID || item.id || null;
-        const cached = patientCache[patientId] || {};
-        
-        const countryId = item._state?._country?.ID || 
-                         item._state?._country?.id || 
-                         item.CountryID || 
-                         item.countryID || 
-                         cached.CountryID || 
-                         null;
-        
-        const stateId = item._state?.ID || 
-                       item._state?.id || 
-                       item.StateID || 
-                       item.stateID || 
-                       cached.StateID || 
-                       null;
-        
-        return {
-          ID: patientId,
-          Name: item.Name || item.name || 'Unnamed',
-          DOB: item.DOB || item.dob || '',
-          Contact: item.Contact || item.contact || '',
-          Address: item.Address || item.address || '',
-          CountryID: countryId,
-          StateID: stateId,
-          CountryName: item._state?._country?.Name || item._state?._country?.name || '',
-          StateName: item._state?.Name || item._state?.name || '',
-          Gender: item.Gender || item.gender || 'Male',
-          ActiveStatus: item.ActiveStatus || item.activeStatus || item.status || 'Inactive'
-        };
-      });
-      
-      setFilteredPatients(data);
-    } catch (error) {
-      const filtered = patients.filter(patient =>
-        patient.Name?.toLowerCase().includes(term.toLowerCase())
-      );
-      setFilteredPatients(filtered);
-    } finally {
-      setSearchLoading(false);
-    }
-  }, [patientCache, patients]);
+    const q = term.trim().toLowerCase();
+    const filtered = patients.filter(patient =>
+      (patient.Name || '').toLowerCase().includes(q) ||
+      String(patient.Contact || '').toLowerCase().includes(q)
+    );
+    setFilteredPatients(filtered);
+  }, [patients]);
 
   const handleSearchInput = (e) => {
     const value = e.target.value;
     setSearchTerm(value);
-    
-    if (searchTimeout.current) {
-      clearTimeout(searchTimeout.current);
-    }
-    
-    searchTimeout.current = setTimeout(() => {
-      searchPatients(value);
-    }, 500);
+    searchPatients(value);
   };
 
   useEffect(() => {
@@ -316,9 +242,6 @@ const Patients = () => {
     
     return () => {
       isMounted.current = false;
-      if (searchTimeout.current) {
-        clearTimeout(searchTimeout.current);
-      }
     };
   }, [loadCountries, loadPatients]);
 
@@ -634,7 +557,7 @@ const Patients = () => {
           <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            placeholder="Search patients by name..."
+            placeholder="Search patients by name or contact..."
             value={searchTerm}
             onChange={handleSearchInput}
             className="w-full pl-10 pr-12 py-2.5 rounded-xl border-2 border-gray-200 focus:border-[#57ABB2] focus:outline-none transition-colors bg-white/50"

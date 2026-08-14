@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   FaPlus, 
   FaEdit, 
@@ -70,9 +71,8 @@ const Diagnosis = () => {
     DiscountAmount: 0
   });
   const isMounted = useRef(true);
-  const searchTimeout = useRef(null);
-  const patientSearchTimeout = useRef(null);
-  const therapySearchTimeout = useRef(null);
+  const patientFieldRef = useRef(null);
+  const therapyFieldRef = useRef(null);
 
   const getAdminUserId = () => {
     const userId = localStorage.getItem('upasanaUserID');
@@ -271,7 +271,7 @@ const Diagnosis = () => {
     const tryFetch = async (dateSegment) => {
       try {
         const url = `/api/DiagnosisAPI/Search/Invoice/${format}/${dateSegment}/${diagnosisId}/${adminId}`;
-        console.log('Trying URL:', url);
+        // console.log('Trying URL:', url);
 
         const response = await axiosInstance.get(url);
 
@@ -288,7 +288,7 @@ const Diagnosis = () => {
           invoiceData = response.data.result;
         }
 
-        console.log('Invoice data:', invoiceData);
+        // console.log('Invoice data:', invoiceData);
         return invoiceData;
       } catch (error) {
         console.error('Error fetching invoice details:', error);
@@ -404,124 +404,75 @@ const Diagnosis = () => {
     };
   }, [loadDiagnoses, loadPatients, loadTherapies]);
 
-  const searchDiagnoses = useCallback(async (term) => {
+  // Close the patient / therapy suggestion lists on any click outside their
+  // input field — the suggestion list itself is inside the same wrapper
+  // (via the ref), so clicking a suggestion still works normally.
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (patientFieldRef.current && !patientFieldRef.current.contains(event.target)) {
+        setShowPatientDropdown(false);
+      }
+      if (therapyFieldRef.current && !therapyFieldRef.current.contains(event.target)) {
+        setShowTherapyDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+
+  const searchDiagnoses = useCallback((term) => {
     if (!term || term.trim() === '') {
       setFilteredDiagnoses(diagnoses);
       return;
     }
-    
-    const adminId = getAdminUserId();
-    if (!adminId) return;
-    
-    setSearchLoading(true);
-    try {
-      const format = 'json';
-      const response = await axiosInstance.post(
-        `/api/DiagnosisAPI/Search/Summary/${format}/${adminId}`,
-        {
-          Date: null,
-          From: null,
-          To: null,
-          ID: null,
-          PatientID: null
-        }
-      );
-      
-      let data = [];
-      if (response.data) {
-        if (Array.isArray(response.data)) {
-          data = response.data;
-        } else if (response.data.data && Array.isArray(response.data.data)) {
-          data = response.data.data;
-        }
-      }
-      
-      const normalizedData = data.map(item => {
-        let summary = item._summaryVar || item;
-        let patient = item._patientVar || {};
-        
-        return {
-          ID: item.ID || item.id || null,
-          Date: item.Date || item.date || null,
-          _summaryVar: {
-            PatientID: summary.PatientID || summary.patientID || summary.patientId || null,
-            Problems: summary.Problems || summary.problems || '',
-            Advice: summary.Advice || summary.advice || '',
-            Precautions: summary.Precautions || summary.precautions || '',
-            TotalTherapyAmount: summary.TotalTherapyAmount || summary.totalTherapyAmount || 0,
-            TherapyDiscount: summary.TherapyDiscount || summary.therapyDiscount || 0,
-            NetTherapyAmount: summary.NetTherapyAmount || summary.netTherapyAmount || 0,
-            TotalAmount: summary.TotalAmount || summary.totalAmount || 0,
-            DiscountAmount: summary.DiscountAmount || summary.discountAmount || 0,
-            GrandTotal: summary.GrandTotal || summary.grandTotal || 0,
-            RoundOff: summary.RoundOff || summary.roundOff || 0,
-            NetPayableAmount: summary.NetPayableAmount || summary.netPayableAmount || 0
-          },
-          _patientVar: {
-            ID: patient.ID || patient.id || null,
-            Name: patient.Name || patient.name || 'Unknown',
-            Contact: patient.Contact || patient.contact || ''
-          },
-          _therapyList: []
-        };
-      });
-      
-      const filtered = normalizedData.filter(item => 
-        item._patientVar?.Name?.toLowerCase().includes(term.toLowerCase()) ||
-        item._summaryVar?.Problems?.toLowerCase().includes(term.toLowerCase())
-      );
-      
-      setFilteredDiagnoses(filtered);
-    } catch (error) {
-      console.error('Error searching diagnoses:', error);
-      const filtered = diagnoses.filter(item =>
-        item._patientVar?.Name?.toLowerCase().includes(term.toLowerCase())
-      );
-      setFilteredDiagnoses(filtered);
-    } finally {
-      setSearchLoading(false);
-    }
+    const q = term.trim().toLowerCase();
+    const filtered = diagnoses.filter(item =>
+      item._patientVar?.Name?.toLowerCase().includes(q) ||
+      String(item._patientVar?.Contact || '').toLowerCase().includes(q) ||
+      item._summaryVar?.Problems?.toLowerCase().includes(q)
+    );
+    setFilteredDiagnoses(filtered);
   }, [diagnoses]);
 
   const handleSearchInput = (e) => {
     const value = e.target.value;
     setSearchTerm(value);
-    
-    if (searchTimeout.current) {
-      clearTimeout(searchTimeout.current);
-    }
-    
-    searchTimeout.current = setTimeout(() => {
-      searchDiagnoses(value);
-    }, 500);
+    searchDiagnoses(value);
   };
+
 
   const handlePatientSearch = (e) => {
     const value = e.target.value;
     setPatientSearchTerm(value);
     setShowPatientDropdown(true);
-    
-    if (patientSearchTimeout.current) {
-      clearTimeout(patientSearchTimeout.current);
+
+    if (!value.trim()) {
+      setFilteredPatients(patients);
+      return;
     }
-    
-    patientSearchTimeout.current = setTimeout(() => {
-      loadPatients(value);
-    }, 300);
+    const q = value.trim().toLowerCase();
+    setFilteredPatients(
+      patients.filter(p =>
+        (p.Name || p.name || '').toLowerCase().includes(q) ||
+        String(p.Contact || p.contact || '').toLowerCase().includes(q)
+      )
+    );
   };
 
   const handleTherapySearch = (e) => {
     const value = e.target.value;
     setTherapySearchTerm(value);
     setShowTherapyDropdown(true);
-    
-    if (therapySearchTimeout.current) {
-      clearTimeout(therapySearchTimeout.current);
+
+    if (!value.trim()) {
+      setFilteredTherapies(therapies);
+      return;
     }
-    
-    therapySearchTimeout.current = setTimeout(() => {
-      loadTherapies(value);
-    }, 300);
+    const q = value.trim().toLowerCase();
+    setFilteredTherapies(
+      therapies.filter(t => (t.Name || t.name || '').toLowerCase().includes(q))
+    );
   };
 
   const selectPatient = (patient) => {
@@ -731,14 +682,14 @@ const Diagnosis = () => {
         }))
       };
 
-      console.log('Saving diagnosis:', JSON.stringify(requestData, null, 2));
+      // console.log('Saving diagnosis:', JSON.stringify(requestData, null, 2)); 
 
       const response = await axiosInstance.post(
         `/api/DiagnosisAPI/Save/${adminId}`,
         requestData
       );
       
-      console.log('Response:', response.data);
+      // console.log('Response:', response.data);
       
       if (response.status === 200 || response.status === 201) {
         toast.success(isEditMode ? 'Diagnosis updated successfully!' : 'Diagnosis created successfully!');
@@ -1031,7 +982,7 @@ const Diagnosis = () => {
           <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            placeholder="Search diagnoses by patient or problem..."
+            placeholder="Search diagnoses by patient, contact, or problem..."
             value={searchTerm}
             onChange={handleSearchInput}
             className="w-full pl-10 pr-12 py-2.5 rounded-xl border-2 border-gray-200 focus:border-[#57ABB2] focus:outline-none transition-colors bg-white/50"
@@ -1147,10 +1098,13 @@ const Diagnosis = () => {
         </div>
       )}
 
-      {/* Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
+      {/* Modal — rendered via portal to escape the page's backdrop-blur ancestor,
+          which otherwise creates a CSS containing block for position:fixed and
+          breaks true viewport centering */}
+      {isModalOpen && createPortal(
+        <div className="fixed inset-0 z-50 overflow-y-auto modal-overlay">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closeModal}></div>
+          <div className="relative min-h-full flex items-center justify-center p-4">
           <div className="relative bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto modal-content">
             <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex justify-between items-center z-10">
               <div>
@@ -1170,15 +1124,7 @@ const Diagnosis = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-6">
-              <div className="bg-blue-50 rounded-lg p-3 border border-blue-100 flex items-center gap-3">
-                <FaUserCog className="text-[#57ABB2] text-lg" />
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Created By</p>
-                  <p className="text-sm text-gray-600">
-                    {getAdminUser()?.name || 'Admin'} (ID: {getAdminUserId() || 'N/A'})
-                  </p>
-                </div>
-              </div>
+             
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1194,8 +1140,7 @@ const Diagnosis = () => {
                 />
               </div>
 
-              <div className="relative">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Patient *</label>
+              <div className="relative" ref={patientFieldRef}>
                 <div className="relative">
                   <FaUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                   <input
@@ -1290,8 +1235,11 @@ const Diagnosis = () => {
                 )}
                 
                 <div className="grid grid-cols-1 md:grid-cols-6 gap-3 mb-3 p-4 bg-gray-50 rounded-lg">
-                  <div className="relative md:col-span-2">
-                    <input
+                  <div className="relative md:col-span-2" ref={therapyFieldRef}>
+                                        <label className="block text-xs text-gray-500 mb-1">Therapy</label>
+
+                    <input 
+                    
                       type="text"
                       placeholder="Search therapy..."
                       value={therapySearchTerm}
@@ -1339,7 +1287,6 @@ const Diagnosis = () => {
                         </button>
                       )}
                     </div>
-                    <p className="text-xs text-gray-400 mt-1">Optional</p>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">
@@ -1365,7 +1312,6 @@ const Diagnosis = () => {
                         </button>
                       )}
                     </div>
-                    <p className="text-xs text-gray-400 mt-1">Optional</p>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Discount</label>
@@ -1496,7 +1442,9 @@ const Diagnosis = () => {
               </div>
             </form>
           </div>
-        </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -220,11 +220,11 @@ const AdminDashboard = () => {
       </button>
 
       <div className={`
-        fixed lg:relative z-40
+        fixed top-0 left-0 h-screen z-40
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         lg:translate-x-0
         transition-transform duration-300 ease-in-out
-        w-64 min-h-screen bg-white shadow-xl
+        w-64 bg-white shadow-xl
         flex flex-col
       `}>
         <div className="p-6 border-b border-gray-100">
@@ -283,7 +283,7 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      <div className="flex-1 p-4 lg:p-8">
+      <div className="flex-1 p-4 lg:p-8 lg:ml-64">
         <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-lg p-6 lg:p-8 min-h-[calc(100vh-2rem)]">
           <Routes>
             <Route path="/" element={<AdminOverview stats={stats} />} />
